@@ -38,13 +38,18 @@ export default function CommentGenerator() {
   const [pasteFeedback, setPasteFeedback] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
+  const [initData, setInitData] = useState("");
+  const [notInTelegram, setNotInTelegram] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (tg?.initData) {
+      setInitData(tg.initData);
       tg.ready?.();
       tg.expand?.();
+    } else {
+      setNotInTelegram(true);
     }
   }, []);
 
@@ -96,7 +101,10 @@ export default function CommentGenerator() {
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": initData,
+        },
         body: JSON.stringify({ post, tone }),
         signal: controller.signal,
       });
@@ -146,6 +154,16 @@ export default function CommentGenerator() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (notInTelegram) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-center text-slate-500 dark:text-slate-400">
+          Please open this app through Telegram.
+        </p>
+      </div>
+    );
   }
 
   return (

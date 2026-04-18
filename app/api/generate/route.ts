@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
+import { validateInitData, isAllowedUser } from "@/lib/telegram-auth";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -33,6 +34,16 @@ const TONE_INSTRUCTIONS: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  const initData = req.headers.get("x-telegram-init-data") ?? "";
+  const { valid, userId } = validateInitData(initData);
+
+  if (!valid || !userId || !isAllowedUser(userId)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const { post, tone } = await req.json();
 
   if (!post?.trim()) {
