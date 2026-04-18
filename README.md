@@ -1,13 +1,20 @@
-# LinkedIn Comment Generator
+# LinkedIn Activity Helper
 
-An AI-powered Telegram Mini App that generates engaging LinkedIn comments in seconds. Paste a LinkedIn post, pick a tone, and get a ready-to-use comment powered by the Anthropic API.
+A Telegram Mini App that uses AI to help you stay active on LinkedIn — generate comments on other people's posts and craft replies to comments on your own posts, all with a chosen tone and real-time streaming output.
 
 > **Telegram Mini App only** — this app is designed exclusively to run inside Telegram as a Mini App. It will not work as a standalone web app because every request is authenticated via Telegram's `initData` HMAC-SHA256 mechanism. You must set it up as a Telegram bot with a Mini App configured.
 
 ## Features
 
+### Comment tab
+Paste any LinkedIn post → pick a tone → get a ready-to-use comment to leave on that post.
+
+### Reply tab
+Paste your own LinkedIn post + a comment someone left on it → pick a tone → get a polished reply. Your post is saved to `localStorage` so you only paste it once per session.
+
+### General
 - **4 tones**: Professional & Insightful, Casual & Friendly, Encouraging & Supportive, Thought-Provoking
-- **Streaming output** — comment appears word by word in real time
+- **Streaming output** — text appears word by word in real time
 - **One-tap copy** to clipboard
 - **User whitelist** — only approved Telegram user IDs can access the app
 - Built with Next.js 14, TypeScript, Tailwind CSS, and the Anthropic SDK
@@ -37,7 +44,7 @@ cp .env.example .env.local   # fill in all three variables
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — note that the UI will work locally but Telegram auth validation is skipped unless you tunnel the URL and open it through Telegram.
+Open [http://localhost:3000](http://localhost:3000) — note that the UI will work locally but Telegram auth validation requires the app to be opened through Telegram with a valid `initData`.
 
 ## Deploying to Vercel
 
@@ -51,7 +58,7 @@ Make sure your repository is on GitHub (or GitLab / Bitbucket).
 2. Click **Add New → Project**.
 3. Select your GitHub repository and click **Import**.
 4. Leave the framework preset as **Next.js** (auto-detected).
-5. Click **Deploy** — the first deploy will fail because env vars are not set yet; that's fine.
+5. Click **Deploy** — the first deploy may fail because env vars are not set yet; that's fine.
 
 ### 3. Add environment variables
 
@@ -81,7 +88,7 @@ Make sure your repository is on GitHub (or GitLab / Bitbucket).
 
 ### 6. Test it
 
-Open the Mini App link in Telegram. Only users whose Telegram ID is in `ALLOWED_USERS` will be able to generate comments.
+Open the Mini App link in Telegram. Only users whose Telegram ID is in `ALLOWED_USERS` will be able to generate comments and replies.
 
 ## Project Structure
 
@@ -92,7 +99,9 @@ app/
   layout.tsx              # Root layout (injects Telegram Web App script)
   globals.css             # Global styles
 components/
-  CommentGenerator.tsx    # Main UI component
+  CommentGenerator.tsx    # Tab shell — shared tone state, tab switcher
+  CommentTab.tsx          # Comment generator (paste any post → generate comment)
+  ReplyTab.tsx            # Reply generator (your post + incoming comment → generate reply)
 lib/
   telegram-auth.ts        # HMAC-SHA256 initData validation
 ```
