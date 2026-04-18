@@ -22,22 +22,13 @@ const TONES = [
   { value: "thoughtprovoking", label: "Thought-Provoking" },
 ];
 
-function isIOS() {
-  return (
-    typeof navigator !== "undefined" &&
-    /iP(hone|ad|od)/.test(navigator.userAgent)
-  );
-}
-
 export default function CommentGenerator() {
   const [post, setPost] = useState("");
   const [comment, setComment] = useState("");
   const [tone, setTone] = useState("casual");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [pasteFeedback, setPasteFeedback] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
-  const [justGenerated, setJustGenerated] = useState(false);
   const [initData, setInitData] = useState("");
   const [notInTelegram, setNotInTelegram] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -53,20 +44,8 @@ export default function CommentGenerator() {
     }
   }, []);
 
-  async function handlePaste() {
-    try {
-      const text = await navigator.clipboard.readText();
-      setPost(text);
-      setPasteFeedback(true);
-      setTimeout(() => setPasteFeedback(false), 1500);
-    } catch {
-      setError("Clipboard access denied — paste manually with Ctrl+V / ⌘V");
-    }
-  }
-
   async function handleCopy() {
     if (!comment) return;
-    setJustGenerated(false);
     try {
       await navigator.clipboard.writeText(comment);
     } catch {
@@ -124,29 +103,6 @@ export default function CommentGenerator() {
         result += decoder.decode(value, { stream: true });
         setComment(result);
       }
-
-      if (result) {
-        if (!isIOS()) {
-          try {
-            await navigator.clipboard.writeText(result);
-          } catch {
-            const el = document.createElement("textarea");
-            el.value = result;
-            el.style.position = "fixed";
-            el.style.opacity = "0";
-            document.body.appendChild(el);
-            el.focus();
-            el.select();
-            document.execCommand("copy");
-            document.body.removeChild(el);
-          }
-          setCopyFeedback(true);
-          setTimeout(() => setCopyFeedback(false), 2000);
-        } else {
-          setJustGenerated(true);
-          setTimeout(() => setJustGenerated(false), 4000);
-        }
-      }
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== "AbortError") {
         setError(err.message);
@@ -178,30 +134,21 @@ export default function CommentGenerator() {
           <label className="text-sm font-semibold" htmlFor="post">
             LinkedIn Post
           </label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setPost(""); setComment(""); }}
-              disabled={!post}
-              className="rounded px-3 py-1 text-xs font-medium transition-colors
-                bg-slate-100 hover:bg-red-100 hover:text-red-600 active:bg-red-200
-                disabled:cursor-not-allowed disabled:opacity-40
-                dark:bg-slate-700 dark:hover:bg-red-900/40 dark:hover:text-red-400"
-            >
-              Clear
-            </button>
-            <button
-              onClick={handlePaste}
-              className="rounded px-3 py-1 text-xs font-medium transition-colors
-                bg-slate-100 hover:bg-slate-200 active:bg-slate-300
-                dark:bg-slate-700 dark:hover:bg-slate-600"
-            >
-              {pasteFeedback ? "Pasted!" : "Paste"}
-            </button>
-          </div>
+          <button
+            onClick={() => { setPost(""); setComment(""); }}
+            disabled={!post}
+            className="rounded px-3 py-1 text-xs font-medium transition-colors
+              bg-slate-100 hover:bg-red-100 hover:text-red-600 active:bg-red-200
+              disabled:cursor-not-allowed disabled:opacity-40
+              dark:bg-slate-700 dark:hover:bg-red-900/40 dark:hover:text-red-400"
+          >
+            Clear
+          </button>
         </div>
         <textarea
           id="post"
-          rows={8}
+          rows={3}
+          autoFocus
           value={post}
           onChange={(e) => setPost(e.target.value)}
           placeholder="Paste or type the LinkedIn post here…"
@@ -259,21 +206,13 @@ export default function CommentGenerator() {
           <button
             onClick={handleCopy}
             disabled={!comment}
-            className={`rounded px-3 py-1 text-xs font-semibold transition-all
+            className="rounded px-3 py-1 text-xs font-semibold transition-all
               disabled:cursor-not-allowed disabled:opacity-40
-              ${justGenerated
-                ? "bg-blue-600 text-white scale-105 shadow-md animate-pulse"
-                : "bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
-              }`}
+              bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
           >
-            {copyFeedback ? "Copied!" : justGenerated ? "Tap to Copy" : "Copy"}
+            {copyFeedback ? "Copied!" : "Copy"}
           </button>
         </div>
-        {justGenerated && (
-          <p className="mb-1 text-xs text-blue-600 dark:text-blue-400">
-            Safari doesn&apos;t allow auto-copy — tap the button above
-          </p>
-        )}
         <textarea
           id="comment"
           rows={6}
