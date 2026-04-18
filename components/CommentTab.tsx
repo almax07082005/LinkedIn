@@ -112,7 +112,6 @@ export default function CommentTab({ initData, tone, setTone }: CommentTabProps)
         <textarea
           id="post"
           rows={3}
-          autoFocus
           value={post}
           onChange={(e) => setPost(e.target.value)}
           placeholder="Paste or type the LinkedIn post here…"
