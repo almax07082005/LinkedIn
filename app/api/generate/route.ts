@@ -4,8 +4,10 @@ import { validateInitData, isAllowedUser } from "@/lib/telegram-auth";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const LENGTH_RULE =
-  "STRICT LENGTH LIMIT: 2 sentences ideal, 3 sentences absolute maximum. Never exceed 3 sentences.";
+const LENGTH_RULE = `HARD LENGTH LIMIT — read this first:
+- Maximum 3 sentences. Aim for 2. Stop after sentence 3 even if you have more to say.
+- A sentence ends in . ! or ? — count them before you finish.
+- If your draft is longer, cut it. Do not deliver more than 3 sentences under any circumstance.`;
 
 const FORMATTING_RULE = `FORMATTING RULES (LinkedIn does NOT render Markdown):
 - Do NOT use any Markdown syntax: no **bold**, no *italics*, no _underline_, no \`code\`, no #, no -, no >, no [text](url), no backticks.
@@ -97,20 +99,20 @@ export async function POST(req: NextRequest) {
 
     stream = await client.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 120,
+      max_tokens: 90,
       system: `You are a LinkedIn engagement expert. Write a reply from the post's AUTHOR to a commenter on their post.
-
-${replyToneInstruction}
 
 ${LENGTH_RULE}
 
 ${FORMATTING_RULE}
 
-Rules: no hashtags, no "Great comment!" opener, sound genuine. Return only the reply text — nothing else.`,
+${replyToneInstruction}
+
+Rules: no hashtags, no "Great comment!" opener, sound genuine. Return only the reply text — nothing else, and never more than 3 sentences.`,
       messages: [
         {
           role: "user",
-          content: `Your original post:\n\n${myPost.trim()}\n\n---\n\nComment you are replying to:\n\n${post.trim()}`,
+          content: `Your original post:\n\n${myPost.trim()}\n\n---\n\nComment you are replying to:\n\n${post.trim()}\n\n---\n\nReminder: maximum 3 sentences, no Markdown.`,
         },
       ],
     });
@@ -119,17 +121,22 @@ Rules: no hashtags, no "Great comment!" opener, sound genuine. Return only the r
 
     stream = await client.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 120,
+      max_tokens: 90,
       system: `You are a LinkedIn engagement expert. Write a single comment for the given LinkedIn post.
-
-${toneInstruction}
 
 ${LENGTH_RULE}
 
 ${FORMATTING_RULE}
 
-Rules: no hashtags, no "Great post!" opener, sound genuine. Return only the comment text — nothing else.`,
-      messages: [{ role: "user", content: `LinkedIn post:\n\n${post.trim()}` }],
+${toneInstruction}
+
+Rules: no hashtags, no "Great post!" opener, sound genuine. Return only the comment text — nothing else, and never more than 3 sentences.`,
+      messages: [
+        {
+          role: "user",
+          content: `LinkedIn post:\n\n${post.trim()}\n\n---\n\nReminder: maximum 3 sentences, no Markdown.`,
+        },
+      ],
     });
   }
 
