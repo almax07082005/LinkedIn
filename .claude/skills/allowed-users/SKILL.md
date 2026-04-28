@@ -1,4 +1,9 @@
-# Manage ALLOWED_USERS on Vercel
+---
+name: allowed-users
+description: Manage ALLOWED_USERS on Vercel — add or remove a Telegram user ID from the production whitelist and redeploy. Use when the user says "/allowed-users add <id>", "/allowed-users remove <id>", "allow this Telegram user", "whitelist user", or "remove user from allowed list".
+---
+
+# allowed-users
 
 Update the `ALLOWED_USERS` environment variable on Vercel and redeploy to production.
 
