@@ -4,66 +4,92 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A small Python CLI named `linkedin` with two subcommands:
+LinkedIn comment / reply generator with two equivalent surfaces:
 
-- `linkedin comment [--tone TONE]` — stdin (the LinkedIn post) → stdout (the generated comment).
-- `linkedin reply [--tone TONE] [--post N | --title TEXT]` — stdin (the incoming comment) + a post from `posts/` (latest by default) → stdout (the reply).
+- a local **CLI** (`linkedin comment` / `linkedin reply`) — stdin → stdout, designed to be wrapped by a macOS Shortcut
+- a **FastAPI HTTP service** (`linkedin-server`, or via `docker compose up`) — `POST /comment` / `POST /reply` with bearer-token auth, JSON request/response
 
-Tones: `professional`, `casual` (default), `encouraging`, `thoughtprovoking`. `--post` and `--title` are mutually exclusive.
+Both share the same prompts, tone definitions, generation logic, and `posts/` loader. The CLI exists for the Mac; the HTTP service exists for the iPhone (and any other HTTP client).
 
-The CLI deliberately does **not** touch the clipboard. macOS Shortcuts wraps it with "Get Clipboard" → "Run Shell Script (input via stdin)" → "Copy to Clipboard" actions, which preserves UTF-8 emoji and Unicode bold characters that go through `pbcopy`/`pbpaste` directly would corrupt (locale-dependent).
+Tones: `professional`, `casual` (default), `encouraging`, `thoughtprovoking`.
 
 ## Stack
 
 - Python 3.10+, single package `linkedin/`.
-- Only runtime dep: `anthropic` (Python SDK).
-- Distributed via `uv tool install --editable .` (or `pipx install -e .`).
-- macOS-targeted (intended invocation is via Shortcuts.app), but the CLI itself is portable — anywhere stdin/stdout pipes work.
-
-## Commands
-
-```bash
-uv tool install --editable .              # install (editable, so __file__ points back at the repo)
-uv tool install --reinstall --editable .  # force reinstall after dependency edits
-linkedin comment                          # smoke test
-linkedin reply --help                     # arg surface
-```
-
-The `--editable` flag matters: `posts.py` and `cli.py` use `Path(__file__).resolve().parent.parent` to find `posts/` and `.env`, which only works if the installed package symlinks back to this repo.
-
-To run without installing (during development):
-
-```bash
-uv run python -m linkedin comment
-```
+- Runtime deps: `anthropic`, `fastapi`, `uvicorn[standard]`.
+- CLI distributed via `uv tool install --editable .` (binary: `linkedin`).
+- Server distributed via Docker (`Dockerfile` + `docker-compose.yml`); also runnable directly via `linkedin-server` for local dev.
+- Deployed on the `outbound` VM (root@5.75.161.189, see `~/.ssh/config`), exposed via Tailscale Funnel.
 
 ## Architecture
 
 ```
 linkedin/
-├── cli.py         # argparse, subcommand dispatch, .env loading, stdin reader, error formatting
+├── cli.py         # argparse, subcommand dispatch, .env loading, stdin reader
 ├── prompts.py     # MAX_OUTPUT_CHARS=200, all four tone blocks, comment + reply prompt builders
-├── generate.py    # Anthropic streaming call (model=claude-sonnet-4-6, max_tokens=220); writes to stdout
-└── posts.py       # posts/ loader: list_posts, latest_post, post_by_number, post_by_title
+├── generate.py    # Anthropic call: generate_text(system, user) -> str (no I/O)
+├── posts.py       # posts/ loader: list_posts, latest_post, post_by_number, post_by_title + errors
+└── server.py      # FastAPI app: /healthz, /comment, /reply, bearer auth, JSON I/O
 ```
 
-Posts live in `posts/` next to the package, named `<number>-<slug>.txt`. The CLI **reads** posts but never writes to that folder.
+`generate_text()` is the shared core. CLI calls it and prints to stdout. Server calls it and wraps the string in a JSON response. No business logic is duplicated.
 
-## Prompts (do not silently drift)
+## Posts
 
-The prompt structure is a direct port of the previous web app:
+Posts live in `posts/` next to the package, named `NNN-slug.txt`. Read-only from the CLI's and server's perspective. In production, `posts/` is bind-mounted from the host into the Docker container.
 
-- A hard length limit (≤200 chars total, aim 70–100% of limit).
-- Anti-Markdown formatting rule (LinkedIn doesn't render it; Unicode bold characters are allowed sparingly).
-- A tone-specific block.
-- A "no hashtags, no 'Great post!' opener" closer.
+Updating posts in prod: add file locally → commit → push → `ssh outbound 'cd /root/linkedin && git pull'`. No container restart needed.
 
-When tweaking prompts, edit `prompts.py` only — `generate.py` is dumb glue.
+## Auth (server only)
+
+Single shared bearer token in env var `LINKEDIN_API_TOKEN`. Checked on every protected endpoint with `hmac.compare_digest` (constant-time). `/healthz` is open.
+
+Generate a token with `openssl rand -hex 32`.
 
 ## Environment
 
-`.env` in the repo root with `ANTHROPIC_API_KEY=...`. Loaded by `cli.py` via a hand-rolled parser (no `python-dotenv` dep) at startup, resolved relative to the package directory so it works regardless of cwd (important for macOS Shortcut invocations).
+`.env` in the repo root with:
+```
+ANTHROPIC_API_KEY=...
+LINKEDIN_API_TOKEN=...    # only needed for the server
+```
+
+CLI loads `.env` via a hand-rolled parser at startup (relative to the package, not cwd). Server reads it via Docker's `env_file: [.env]`.
+
+## Deployment
+
+See [deploy/README.md](deploy/README.md). High level: `docker compose up -d --build` on the `outbound` VM (path: `/root/linkedin/`), then `tailscale funnel --bg 127.0.0.1:8081` to expose publicly via the device's `tail73224f.ts.net` URL. Posts bind-mounted from host, no rebuild needed for content changes.
+
+## Commands
+
+```bash
+# CLI
+uv tool install --editable .                # install / reinstall
+echo "post" | linkedin comment              # smoke
+linkedin reply --help
+
+# Server (local dev)
+linkedin-server                             # binds 127.0.0.1:8081
+curl http://127.0.0.1:8081/healthz
+
+# Server (docker, local)
+docker compose up -d --build
+curl http://127.0.0.1:8081/healthz
+
+# Production
+ssh outbound 'cd /root/linkedin && git pull && docker compose up -d --build'
+```
+
+## Prompts (do not silently drift)
+
+Prompt structure preserved verbatim from the original Next.js implementation:
+- HARD LENGTH LIMIT (≤200 chars total, aim 140–200)
+- FORMATTING RULES (no Markdown, Unicode bold OK)
+- Tone-specific block (one of four)
+- "no hashtags, no 'Great post!' opener" closer
+
+Edit `prompts.py` only. `generate.py` is dumb glue.
 
 ## Branch history
 
-The current branch (`scripted`) is an **orphan** branch — no shared history with `master`. `master` still holds the previous Next.js / Telegram Mini App version of this project, kept as a record.
+The current branch (`scripted`) is an **orphan** branch — no shared history with `master`. `master` still holds the previous Next.js / Telegram Mini App version, kept as a record.

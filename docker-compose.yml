@@ -1,0 +1,13 @@
+services:
+  linkedin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linkedin-api
+    env_file:
+      - .env
+    volumes:
+      - ./posts:/app/posts:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped

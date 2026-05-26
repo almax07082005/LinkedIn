@@ -1,14 +1,17 @@
 [project]
 name = "linkedin"
-version = "0.1.0"
-description = "Local CLI that turns clipboard content into LinkedIn comments and replies."
+version = "0.2.0"
+description = "LinkedIn comment / reply generator — local CLI and HTTP service."
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.40",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
 ]
 
 [project.scripts]
 linkedin = "linkedin.cli:main"
+linkedin-server = "linkedin.server:run"
 
 [build-system]
 requires = ["hatchling"]

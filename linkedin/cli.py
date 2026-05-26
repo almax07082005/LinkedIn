@@ -78,9 +78,10 @@ def cmd_comment(tone: str) -> None:
     post_text = read_stdin()
     p = prompts.build_comment_prompt(post_text, tone)
     try:
-        generate.generate(p["system"], p["user"])
+        text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:
         die(str(e))
+    print(text)
 
 
 def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> None:
@@ -103,9 +104,10 @@ def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> Non
 
     p = prompts.build_reply_prompt(chosen.body, incoming, tone)
     try:
-        generate.generate(p["system"], p["user"])
+        text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:
         die(str(e))
+    print(text)
 
 
 def main() -> None:
