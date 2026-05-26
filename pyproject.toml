@@ -1,0 +1,18 @@
+[project]
+name = "linkedin"
+version = "0.1.0"
+description = "Local CLI that turns clipboard content into LinkedIn comments and replies."
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40",
+]
+
+[project.scripts]
+linkedin = "linkedin.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["linkedin"]
