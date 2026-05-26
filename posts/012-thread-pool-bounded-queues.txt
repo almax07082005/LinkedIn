@@ -1,0 +1,13 @@
+𝐘𝐨𝐮𝐫 𝐭𝐡𝐫𝐞𝐚𝐝 𝐩𝐨𝐨𝐥 𝐦𝐢𝐠𝐡𝐭 𝐛𝐞 𝐡𝐢𝐝𝐢𝐧𝐠 𝐚 𝐫𝐞𝐚𝐥 𝐩𝐫𝐨𝐝𝐮𝐜𝐭𝐢𝐨𝐧 𝐢𝐬𝐬𝐮𝐞 ⚠️
+
+Everything can look stable in development and even during staging tests, but once real traffic starts flowing through the system, latency begins to grow, timeouts appear more frequently, and the overall behavior feels inconsistent in a way that’s hard to immediately explain.
+
+A common reason sits in how thread pools are configured, especially when default settings are left untouched. Many implementations rely on unbounded queues, which means that instead of applying backpressure or scaling execution, the system continues to accept incoming tasks and silently accumulates them in memory. From the outside, the service still responds, but internally the delay between accepting a request and actually processing it keeps increasing.
+
+𝐔𝐧𝐝𝐞𝐫 𝐫𝐞𝐚𝐥 𝐥𝐨𝐚𝐝, 𝐭𝐡𝐞 𝐛𝐞𝐡𝐚𝐯𝐢𝐨𝐫 𝐛𝐞𝐜𝐨𝐦𝐞𝐬 𝐪𝐮𝐢𝐭𝐞 𝐩𝐫𝐞𝐝𝐢𝐜𝐭𝐚𝐛𝐥𝐞 👇
+
+Requests continue to arrive at a steady rate while the queue grows faster than it is being drained, workers stay constantly busy without ever catching up, and response times gradually degrade until the slowdown becomes noticeable for users. At that point, the system is already overloaded, even though there may be no explicit errors or failures. Using 𝐛𝐨𝐮𝐧𝐝𝐞𝐝 𝐪𝐮𝐞𝐮𝐞𝐬 changes this dynamic by forcing the application to acknowledge its limits and react accordingly. Combined with 𝐫𝐞𝐣𝐞𝐜𝐭𝐢𝐨𝐧 𝐩𝐨𝐥𝐢𝐜𝐢𝐞𝐬, this makes overload visible instead of letting it build up silently over time.
+
+Another subtle issue appears when different types of workloads share the same pool, since IO-heavy operations can occupy threads for long periods and delay CPU-bound tasks, eventually creating a cascading slowdown across the entire service. A useful signal that is often underestimated is the queue size itself: if it keeps growing over time, the system is already processing work slower than it receives it, regardless of how stable other metrics may look.
+
+Have you ever spent time investigating performance issues that turned out to be caused by something as simple as thread pool configuration? 😄

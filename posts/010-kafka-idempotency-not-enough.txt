@@ -1,0 +1,11 @@
+We had Kafka. We had idempotency. And we still charged users twice.
+
+This happened in a payment flow running on Kubernetes with async processing via Apache Kafka. Everything looked “correct”: retries were in place, operations were idempotent, jobs were distributed across instances. But there was a tiny timing gap between picking an operation and updating its status — and that was enough. Two instances grabbed the same operation and both executed it. In fintech, that’s not just a bug — 𝗶𝘁’𝘀 𝗿𝗲𝗮𝗹 𝗺𝗼𝗻𝗲𝘆 𝗹𝗼𝘀𝘁.
+
+The fix wasn’t adding yet another tool. It was accepting a simple idea: 𝗻𝗼 𝘀𝗶𝗻𝗴𝗹𝗲 𝗺𝗲𝗰𝗵𝗮𝗻𝗶𝘀𝗺 𝗴𝘂𝗮𝗿𝗮𝗻𝘁𝗲𝗲𝘀 𝗰𝗼𝗿𝗿𝗲𝗰𝘁𝗻𝗲𝘀𝘀 in distributed systems. We ended up layering protection — 𝗶𝗱𝗲𝗺𝗽𝗼𝘁𝗲𝗻𝗰𝘆 for safe retries, 𝗞𝗮𝗳𝗸𝗮 for decoupling, 𝗷𝗼𝗯-𝗹𝗲𝘃𝗲𝗹 𝗱𝗲𝗱𝘂𝗽𝗹𝗶𝗰𝗮𝘁𝗶𝗼𝗻, and finally 𝗗𝗕 𝗿𝗼𝘄 𝗹𝗼𝗰𝗸𝗶𝗻𝗴 (SELECT FOR UPDATE) to guarantee that only one process can actually execute the operation. That last layer is usually underestimated — but it’s the one that closes the race.
+
+𝗞𝗮𝗳𝗸𝗮 guarantees delivery. It does 𝗻𝗼𝘁 guarantee that your business logic runs exactly once. And 𝗶𝗱𝗲𝗺𝗽𝗼𝘁𝗲𝗻𝗰𝘆 helps, but it doesn’t eliminate every edge case when state transitions themselves are concurrent.
+
+After that case, I stopped thinking in terms of “we use Kafka, we’re safe”. Now it’s always: 𝘄𝗵𝗮𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝘀 𝗶𝗳 𝘁𝗵𝗶𝘀 𝗹𝗮𝘆𝗲𝗿 𝗳𝗮𝗶𝗹𝘀 — 𝗮𝗻𝗱 𝘄𝗵𝗮𝘁 𝗰𝗮𝘁𝗰𝗵𝗲𝘀 𝗶𝘁?
+
+Have you ever seen a system that was “theoretically safe” but still broke in production? 👇

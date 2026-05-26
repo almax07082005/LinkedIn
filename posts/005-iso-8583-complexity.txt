@@ -1,0 +1,9 @@
+𝗜𝗦𝗢 𝟴𝟱𝟴𝟯 𝗹𝗼𝗼𝗸𝘀 𝘀𝗰𝗮𝗿𝘆… 𝘂𝗻𝘁𝗶𝗹 𝘆𝗼𝘂 𝗿𝗲𝗮𝗹𝗶𝘇𝗲 𝗽𝗮𝗿𝘀𝗶𝗻𝗴 𝗶𝘁 𝗶𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗹𝘆 𝘁𝗵𝗲 𝗲𝗮𝘀𝗶𝗲𝘀𝘁 𝗽𝗮𝗿𝘁 🙂
+
+I worked on a crypto payment processor handling ISO 8583 end-to-end, and at the beginning it really feels like the hard part is just understanding the format: MTI, bitmaps, fields, lengths, all that. But once you get past parsing, the problems shift pretty quickly.
+
+In our case, field definitions weren’t hardcoded — they lived in PostgreSQL and were cached in Redis, so we could change message structure without redeploying. Sounds flexible, but now your system has to stay stable while the protocol itself can change underneath you. Then comes classification: one message doesn’t mean much until you resolve what it actually represents, so we had to map transaction types based on MTI + processing code + function code. On top of that, routing depends on business rules — same message, but depending on BIN you either go through a full pipeline (encryption → masking → external call) or take a faster path.
+
+And this is where things start getting messy 😅 you keep raw messages for reconstruction, deal with retries hitting the same transaction, handle timeouts where you’re not even sure if the external system processed the request, and try to keep everything idempotent across multiple integrations. At some point you stop thinking about ISO as “a format to parse” and start seeing it as just the entry into a system where most of the complexity lives in 𝘀𝘁𝗮𝘁𝗲, 𝗿𝗼𝘂𝘁𝗶𝗻𝗴, 𝗮𝗻𝗱 𝗳𝗮𝗶𝗹𝘂𝗿𝗲 𝗵𝗮𝗻𝗱𝗹𝗶𝗻𝗴.
+
+Curious if anyone here worked with ISO 8583 or similar protocols — what was the hardest part for you? 🤔

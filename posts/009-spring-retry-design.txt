@@ -1,0 +1,21 @@
+That moment when external service fails once… and your whole flow breaks 😅
+
+I used to handle retries “manually” — try/catch, counters, delays… messy and hard to maintain.
+Then I started using 𝐒𝐩𝐫𝐢𝐧𝐠 𝐑𝐞𝐭𝐫𝐲, and it changed how I design integrations.
+
+In one of the payment flows, we had unstable external APIs. Not fully down — just random timeouts and occasional 5xx. Enough to hurt conversion and reliability.
+
+Instead of overengineering, we introduced a simple approach:
+→ 𝐑𝐞𝐭𝐫𝐲𝐚𝐛𝐥𝐞 on critical calls
+→ configurable attempts and backoff from properties
+→ 𝐑𝐞𝐜𝐨𝐯𝐞𝐫 methods for fallback logic
+→ proper logging to understand retry behavior
+
+What I like most — it keeps business logic clean. No need to pollute services with retry loops.
+But there was one important lesson: retries are not free.
+If your operation is not idempotent — you’re just multiplying problems.
+
+Now I treat retries as part of system design:
+when to retry, how many times, and what happens if it still fails.
+
+Do you usually rely on retries or prefer fail-fast + compensation? 👇

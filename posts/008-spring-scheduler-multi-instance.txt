@@ -1,0 +1,27 @@
+𝐘𝐨𝐮𝐫 𝐒𝐩𝐫𝐢𝐧𝐠 @𝐒𝐜𝐡𝐞𝐝𝐮𝐥𝐞𝐝 𝐣𝐨𝐛 𝐢𝐬 𝐩𝐫𝐨𝐛𝐚𝐛𝐥𝐲 𝐛𝐫𝐨𝐤𝐞𝐧 ⚠️
+
+It works perfectly… until you deploy a second instance.
+
+Then suddenly:
+— jobs run twice
+— payments get duplicated
+— external providers get spammed
+
+Why? Because 𝐞𝐯𝐞𝐫𝐲 𝐢𝐧𝐬𝐭𝐚𝐧𝐜𝐞 runs its own scheduler. Spring doesn’t coordinate this for you — there’s no leader election out of the box.
+So in multi-instance setups (Kubernetes, autoscaling, etc.), 𝐲𝐨𝐮𝐫 𝐣𝐨𝐛𝐬 𝐚𝐫𝐞 𝐧𝐨 𝐥𝐨𝐧𝐠𝐞𝐫 𝐬𝐢𝐧𝐠𝐥𝐞.
+
+What actually works in production?
+
+𝐎𝐩𝐭𝐢𝐨𝐧 𝟏 — 𝐃𝐢𝐬𝐭𝐫𝐢𝐛𝐮𝐭𝐞𝐝 𝐥𝐨𝐜𝐤𝐢𝐧𝐠 (e.g. ShedLock)
+One instance acquires a lock → others skip execution. Simple, fast to implement, but still time-based and can fail if lock expires too early.
+
+𝐎𝐩𝐭𝐢𝐨𝐧 𝟐 — 𝐃𝐞𝐝𝐢𝐜𝐚𝐭𝐞𝐝 𝐣𝐨𝐛 𝐬𝐞𝐫𝐯𝐢𝐜𝐞
+Only one service schedules jobs, others just process tasks. Removes contention and scales better.
+
+𝐎𝐩𝐭𝐢𝐨𝐧 𝟑 — 𝐄𝐯𝐞𝐧𝐭-𝐝𝐫𝐢𝐯𝐞𝐧 𝐚𝐩𝐩𝐫𝐨𝐚𝐜𝐡 (Kafka, queues)
+Publish events instead of polling — no cron duplication problem at all.
+
+𝐓𝐡𝐞 𝐫𝐮𝐥𝐞 𝐈 𝐟𝐨𝐥𝐥𝐨𝐰:
+If a job affects money, state, or external systems — 𝐢𝐭 𝐦𝐮𝐬𝐭 𝐛𝐞 𝐬𝐢𝐧𝐠𝐥𝐞-𝐞𝐱𝐞𝐜𝐮𝐭𝐢𝐨𝐧 𝐬𝐚𝐟𝐞.
+Most scheduler bugs aren’t about logic — they come from 𝐚𝐬𝐬𝐮𝐦𝐢𝐧𝐠 𝐬𝐢𝐧𝐠𝐥𝐞 𝐢𝐧𝐬𝐭𝐚𝐧𝐜𝐞 𝐛𝐞𝐡𝐚𝐯𝐢𝐨𝐫 in a distributed system.
+And that assumption breaks the moment you scale.

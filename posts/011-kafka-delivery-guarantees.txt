@@ -1,0 +1,39 @@
+Most developers use Kafka… but very few understand what guarantees it actually gives 🤔
+
+At first glance, Apache Kafka feels simple:
+producer → topic → consumer → done. But the tricky part is not how to use it — it’s what actually happens under the hood when things go wrong.
+
+Let’s talk about delivery guarantees 👇
+
+𝗔𝘁 𝗺𝗼𝘀𝘁 𝗼𝗻𝗰𝗲
+Message is sent once… or maybe not at all.
+Fast, but you can lose data.
+𝗔𝘁 𝗹𝗲𝗮𝘀𝘁 𝗼𝗻𝗰𝗲
+Message will be delivered, but duplicates are possible.
+This is what most systems actually run on.
+𝗘𝘅𝗮𝗰𝘁𝗹𝘆 𝗼𝗻𝗰𝗲
+Sounds perfect. Almost never truly is.
+
+Why? Because Kafka can guarantee exactly-once inside itself (producer → topic → consumer group),
+but the moment you involve a database or external service — you’re back to reality.
+
+Example:
+– consumer reads message
+– writes to DB
+– crashes before committing offset
+
+Kafka will resend the message → your DB now has duplicates. Kafka didn’t fail. Your assumptions did.
+
+𝗧𝗵𝗲 𝗿𝗲𝗮𝗹 𝗽𝗮𝘁𝘁𝗲𝗿𝗻
+Instead of chasing “exactly-once”, strong systems do this:
+– make consumers 𝗶𝗱𝗲𝗺𝗽𝗼𝘁𝗲𝗻𝘁
+– store processing state (eventId, status)
+– commit offsets only after safe handling
+– accept duplicates as a normal case
+
+Because in distributed systems:
+𝗗𝘂𝗽𝗹𝗶𝗰𝗮𝘁𝗲𝘀 𝗮𝗿𝗲 𝗯𝗲𝘁𝘁𝗲𝗿 𝘁𝗵𝗮𝗻 𝗹𝗼𝘀𝘀
+And once you design with that in mind, Kafka becomes incredibly reliable.
+
+Curious what you’ve seen in practice 👇
+Do you trust “exactly-once”, or always design for duplicates?

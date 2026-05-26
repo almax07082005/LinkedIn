@@ -1,0 +1,21 @@
+𝗕𝗿𝗶𝗱𝗴𝗶𝗻𝗴 𝗹𝗲𝗴𝗮𝗰𝘆 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝘁𝗲𝗿𝗺𝗶𝗻𝗮𝗹𝘀 𝘄𝗶𝘁𝗵 𝗺𝗼𝗱𝗲𝗿𝗻 𝗺𝗶𝗰𝗿𝗼𝘀𝗲𝗿𝘃𝗶𝗰𝗲𝘀 𝗶𝘀 𝘄𝗵𝗲𝗿𝗲 𝘁𝗵𝗶𝗻𝗴𝘀 𝗴𝗲𝘁… 𝗶𝗻𝘁𝗲𝗿𝗲𝘀𝘁𝗶𝗻𝗴 😅
+
+We had a setup where payment terminals were sending raw messages over TCP, while our processing system was built as a typical HTTP-based microservice. Sounds simple — just “translate TCP to HTTP”, right? In reality, it’s a bit more complicated.
+
+We built a Go adapter that sits in between: it accepts TCP connections from terminals, translates incoming messages into HTTP requests, sends them to the processing service, and then writes the response back to the same TCP connection. The tricky part wasn’t the translation itself — it was everything around it.
+
+Each TCP connection is long-lived and stateful, while HTTP is short-lived and stateless. So you need to:
+– keep track of active connections
+– map responses back to the correct client
+– handle disconnects and retries
+– avoid blocking when one client becomes slow
+
+We ended up managing connections in-memory with per-client channels and bounded queues, so slow clients don’t bring the whole system down. If a client can’t keep up — we fail fast instead of blocking everything.
+
+Another interesting part was pushing asynchronous results back to terminals. After processing a transaction via HTTP, we exposed a separate endpoint that triggers a message back into the TCP layer, which then gets routed to the correct connection.
+
+So now your system is not just request-response anymore — it’s 𝗯𝗶𝗱𝗶𝗿𝗲𝗰𝘁𝗶𝗼𝗻𝗮𝗹 𝗰𝗼𝗺𝗺𝘂𝗻𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗮𝗰𝗿𝗼𝘀𝘀 𝗱𝗶𝗳𝗳𝗲𝗿𝗲𝗻𝘁 𝗽𝗿𝗼𝘁𝗼𝗰𝗼𝗹𝘀 🙂
+At that point you realize the main problem is not TCP or HTTP.
+It’s coordinating state and flow between systems that follow completely different communication models.
+
+Curious if anyone had to bridge legacy protocols with modern services — what was the hardest part for you? 🤔

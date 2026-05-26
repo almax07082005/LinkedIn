@@ -1,0 +1,19 @@
+One of the most underestimated problems in backend systems is how Kafka consumers behave during rebalancing ⚠️
+
+At small scale, everything looks stable. Messages are consumed, offsets are committed, metrics are green. But once traffic grows and deployments become frequent, rebalancing starts exposing things that usually stay invisible in development. I’ve seen situations where one rolling deploy suddenly caused duplicated processing, long pauses in consumption, and operations stuck in intermediate states simply because consumers were not designed for rebalance scenarios.
+
+The tricky part is that Kafka itself is usually working exactly as expected. The real issue appears when business logic assumes that message processing is “single threaded” or “stable enough”. It rarely is.
+
+In financial systems especially, even a short rebalance window may lead to:
+— duplicated payment execution
+— lost in-memory state
+— race conditions between consumers
+— delayed retries and broken ordering
+
+That’s why relying only on Kafka partition ownership is dangerous. In production systems, idempotency and DB-level consistency become far more important than “who owns the partition right now”. We eventually moved critical flows to designs where:
+— processing was idempotent by operation ID
+— DB locks protected state transitions
+— Kafka became a delivery mechanism, not a consistency guarantee
+After that, rebalances stopped being scary operational events and became just another infrastructure detail.
+
+Curious how other teams handle consumer rebalancing in high-load systems — through pure Kafka mechanics or additional persistence-level protection? 👀

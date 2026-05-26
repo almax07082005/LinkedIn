@@ -1,0 +1,9 @@
+𝗠𝗼𝘀𝘁 𝗛𝗧𝗧𝗣 𝗰𝗹𝗶𝗲𝗻𝘁𝘀 𝗶𝗻 𝗳𝗶𝗻𝘁𝗲𝗰𝗵 𝗹𝗼𝗼𝗸 𝘀𝗶𝗺𝗽𝗹𝗲… 𝘂𝗻𝘁𝗶𝗹 𝘆𝗼𝘂 𝗿𝘂𝗻 𝘁𝗵𝗲𝗺 𝗶𝗻 𝗽𝗿𝗼𝗱𝘂𝗰𝘁𝗶𝗼𝗻 😅
+
+At some point we had several external integrations (payment providers, AML, internal services), and on paper it was just “call REST API and handle response”. In reality, a naive HTTP client becomes a problem very quickly. Without proper connection pooling you start exhausting resources, badly tuned timeouts lead to blocked threads and latency spikes, and aggressive retries can easily amplify failures instead of handling them.
+
+We ended up treating HTTP clients as 𝗳𝘂𝗹𝗹-𝗯𝗹𝗼𝘄𝗻 𝗶𝗻𝗳𝗿𝗮𝘀𝘁𝗿𝘂𝗰𝘁𝘂𝗿𝗲 𝗰𝗼𝗺𝗽𝗼𝗻𝗲𝗻𝘁𝘀. Each integration had its own setup: connection pool limits, timeouts, retry + backoff strategy, custom error handlers, and request/response interceptors for logging and tracing. On top of that — SSL configuration, consistent headers, and observability (latency, payload size, error rates).
+
+The interesting part is that most issues didn’t come from business logic, but from how we communicated with external systems. A poorly configured client can overload providers, block threads, hide real errors behind retries, or just slowly degrade performance.
+
+Once we started treating HTTP clients properly, a lot of “random instability” just disappeared 🙂 Curious how others approach this — centralized clients or per-integration tuning? 🤔

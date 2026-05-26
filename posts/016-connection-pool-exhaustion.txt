@@ -1,0 +1,21 @@
+𝗬𝗼𝘂𝗿 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝘀𝘆𝘀𝘁𝗲𝗺 𝗶𝘀 𝗳𝗮𝘀𝘁… 𝘂𝗻𝘁𝗶𝗹 𝗼𝗻𝗲 𝘀𝗹𝗼𝘄 𝗲𝘅𝘁𝗲𝗿𝗻𝗮𝗹 𝗔𝗣𝗜 𝘀𝘁𝗮𝗿𝘁𝘀 𝗯𝗹𝗼𝗰𝗸𝗶𝗻𝗴 𝗲𝘃𝗲𝗿𝘆𝘁𝗵𝗶𝗻𝗴 ⚠️
+
+One of the most underestimated problems in backend systems is connection pool exhaustion during external integrations, especially in fintech.
+
+At one point, we had a service where everything looked healthy:
+CPU normal, DB fine, Kafka stable, no memory spikes, but requests suddenly started timing out under load. The root cause was hidden much deeper — external provider calls were hanging longer than expected, and Apache HTTP Client connection pools slowly became fully occupied. New requests were waiting for free connections instead of doing actual work.
+
+What made it dangerous is that the issue propagated across the system very quietly. Threads were alive, pods were healthy, metrics looked “acceptable”, meanwhile latency was growing step by step until users started getting failed operations.
+
+After that incident, I completely changed the way I treat outbound HTTP integrations in Spring services. Now I always pay attention to:
+• separate connection pools for different providers
+• strict connect/read/request timeout configuration
+• connection TTL and validation after inactivity
+• pool sizing based on real RPS instead of defaults
+• request/response metrics per integration
+• backpressure instead of unlimited retries
+• bulkheading critical integrations from each other
+
+One overloaded provider should never be able to consume all outbound connections of the entire service. The scary part is that this kind of problem often appears only in production traffic patterns. Synthetic tests may show everything is perfectly fine until real latency spikes begin. A lot of “random timeout” incidents are actually connection management problems hiding underneath.
+
+Have you ever debugged issues where the real bottleneck was not business logic, but HTTP connection handling? 👀

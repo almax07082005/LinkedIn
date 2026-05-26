@@ -1,0 +1,27 @@
+We were losing ~$146K per month because of a p99.87 race condition in a multi-instance Spring Boot system running in Kubernetes 🙂
+
+Originally, oct-service handled everything. An API method persisted operations into PostgreSQL, and the same service had @Scheduled jobs coordinated with ShedLock to scan READY_TO_PERFORM operations and execute them. Under load, a timing window between lock release and status mutation allowed another pod to pick up the same operation. Duplicate financial execution 💸
+
+We traced it through cross-pod Kubernetes logs, Kibana timelines, and direct PostgreSQL inspection. Tightening transaction boundaries reduced the window, but the real problem wasn’t transactional — it was architectural.
+
+We split responsibilities.
+
+Now the Spring Boot oct-service only handles API calls and writes operations to PostgreSQL inside the request flow. A separate job service (single instance) polls the operations table in small batches by status, writes dispatch records into a job_locks table for idempotency, and publishes events to Kafka.
+
+oct-service no longer polls. It only consumes.
+
+Each consumed operation is fetched with SELECT … FOR UPDATE, guaranteeing row-level exclusivity even under Kafka retries or consumer rebalances.
+
+Now we have:
+
+• API writes inside request lifecycle
+• Single dispatcher for background work
+• Idempotent dispatch via job_locks
+• DB-level locking for strong per-operation safety
+• Horizontal scaling without race windows
+
+Since rollout — zero duplicate payments ✔️
+
+If you’re using Spring schedulers in clustered deployments, ask yourself: are you protecting just the job trigger, or the entire lifecycle of your data?
+
+Curious how others design idempotent dispatch in financial systems, share your thoughts in comments👇

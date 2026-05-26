@@ -1,0 +1,29 @@
+Designing a QR payment system looks simple… until one payment gets stuck between “confirmed” and “notified” and you now have money in limbo 💸
+
+We built a QR payment service (~18M transactions/year), and the real problem wasn’t APIs — it was 𝗰𝗼𝗻𝘁𝗿𝗼𝗹𝗹𝗶𝗻𝗴 𝘀𝘁𝗮𝘁𝗲 𝘂𝗻𝗱𝗲𝗿 𝗳𝗮𝗶𝗹𝘂𝗿𝗲𝘀
+
+A naive approach is request-driven: user hits “confirm” → you call provider → return result. Works fine… until:
+– provider is slow or times out
+– notify callback fails
+– retry triggers duplicate processing
+– system crashes mid-flow
+
+Now you don’t know: was the payment completed or not?
+So we moved to a 𝗿𝗲𝗮𝗹 𝘀𝘁𝗮𝘁𝗲-𝗱𝗿𝗶𝘃𝗲𝗻 𝗺𝗼𝗱𝗲𝗹.
+
+Every operation lives in PostgreSQL and goes through explicit states:
+NEW → READY_TO_CONFIRM → PENDING_PROCESS → SUCCESS / FAILED / CANCELLED
+Instead of “doing work in requests”, requests only 𝗺𝗼𝘃𝗲 𝘀𝘁𝗮𝘁𝗲 𝗳𝗼𝗿𝘄𝗮𝗿𝗱. The actual processing happens asynchronously.
+
+What made it work in practice:
+– 𝗶𝗱𝗲𝗺𝗽𝗼𝘁𝗲𝗻𝗰𝘆 𝗽𝗲𝗿 𝗼𝗽𝗲𝗿𝗮𝘁𝗶𝗼𝗻 (same request = same result, always)
+– retries with backoff only for async jobs, not user flows
+– scheduled jobs to handle stuck states (timeouts, retries, cleanup)
+– external calls isolated from request lifecycle
+– state transitions are atomic (no half-updated operations)
+
+Interesting part — retries didn’t make the system reliable.
+They actually made it worse until the 𝗿𝘂𝗹𝗲𝘀 𝗼𝗳 𝘁𝗵𝗲 𝘀𝘁𝗮𝘁𝗲 𝗺𝗮𝗰𝗵𝗶𝗻𝗲 became strict enough 🙂
+Once the state machine was solid, everything else (Kafka, retries, schedulers) became predictable instead of dangerous.
+
+Curious how others approach this — do you trust request-response flows in payments, or always move critical logic async? 🤔
