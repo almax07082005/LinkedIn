@@ -60,34 +60,31 @@ curl -sS -X POST http://127.0.0.1:8081/comment \
 
 ## Expose via Tailscale Funnel
 
+The `outbound` VM is registered in Tailscale as device `tg-mcp`, and port 443 of that device already routes to `telegram-mcp` on `127.0.0.1:8000`. Tailscale Funnel supports three HTTPS ports per device: 443, 8443, 10000. We use **8443** for `linkedin-api`:
+
 ```bash
 # On the VM as root:
-tailscale funnel --bg 127.0.0.1:8081
+tailscale funnel --https=8443 --bg 127.0.0.1:8081
 
-# Inspect the URL Tailscale assigned:
+# Confirm:
 tailscale funnel status
-# Or (older syntax):
-tailscale serve status
+# Expect both routes:
+#   https://tg-mcp.tail73224f.ts.net       (telegram-mcp)
+#   https://tg-mcp.tail73224f.ts.net:8443  (linkedin-api)
 ```
 
-The public URL will be `https://<this-device>.tail73224f.ts.net/`. Each tailnet device has one HTTPS port (443), so if Funnel is already in use by another service on this device, you'll need to either:
-
-- **Use path-based routing** (single device, multiple backends):
-  ```bash
-  # Map /linkedin/* → 127.0.0.1:8081/*
-  tailscale serve --bg --set-path=/linkedin/ http://127.0.0.1:8081
-  tailscale funnel 443 on
-  ```
-  The endpoint becomes `https://<device>.tail73224f.ts.net/linkedin/healthz`. Note: the FastAPI routes are mounted at root, so you may need to strip the prefix or change the FastAPI `root_path` — easiest is to use a separate device alias.
-
-- **Register a new device alias** (recommended, mirrors the `tg-mcp` setup):
-  Follow the same flow you used to create the `tg-mcp` device. Once it's online, run `tailscale funnel --bg 127.0.0.1:8081` from inside that alias's context. The public URL will be `https://linkedin.tail73224f.ts.net`.
+**Public URL: `https://tg-mcp.tail73224f.ts.net:8443`**
 
 Verify from your Mac (not the VM):
+
 ```bash
-curl -fsS https://linkedin.tail73224f.ts.net/healthz
+curl -fsS https://tg-mcp.tail73224f.ts.net:8443/healthz
 # {"ok":true}
 ```
+
+To disable later: `tailscale funnel --https=8443 off`.
+
+If you'd rather have a cleaner subdomain (e.g. `https://tg-mcp.tail73224f.ts.net:8443/` on port 443), register a separate Tailscale device for this service. The two-port-on-one-device setup is the simplest path and works identically from Shortcuts.
 
 ## Updating posts
 
@@ -118,7 +115,7 @@ Create one Shortcut per action you want. Example: **LinkedIn — Comment (Casual
 
 1. **Get Clipboard** (action).
 2. **Get Contents of URL** (action):
-   - **URL**: `https://linkedin.tail73224f.ts.net/comment`
+   - **URL**: `https://tg-mcp.tail73224f.ts.net:8443/comment`
    - **Method**: `POST`
    - **Headers**:
      - `Authorization`: `Bearer <paste your LINKEDIN_API_TOKEN>`

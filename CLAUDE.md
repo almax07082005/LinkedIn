@@ -58,7 +58,7 @@ CLI loads `.env` via a hand-rolled parser at startup (relative to the package, n
 
 ## Deployment
 
-See [deploy/README.md](deploy/README.md). High level: `docker compose up -d --build` on the `outbound` VM (path: `/root/linkedin/`), then `tailscale funnel --bg 127.0.0.1:8081` to expose publicly via the device's `tail73224f.ts.net` URL. Posts bind-mounted from host, no rebuild needed for content changes.
+See [deploy/README.md](deploy/README.md). High level: `docker compose up -d --build` on the `outbound` VM (path: `/root/linkedin/`), then `tailscale funnel --https=8443 --bg 127.0.0.1:8081` to expose publicly. Currently live at **`https://tg-mcp.tail73224f.ts.net:8443`** (the VM is registered in Tailscale as `tg-mcp`; port 443 of that device is already used by telegram-mcp, so linkedin-api goes on 8443). Posts bind-mounted from host, no rebuild needed for content changes.
 
 ## Commands
 

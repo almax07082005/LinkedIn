@@ -64,7 +64,7 @@ uv run python -m linkedin.server
 
 ### Production (Docker + Tailscale Funnel)
 
-See [deploy/README.md](deploy/README.md) for the full VM setup: `docker compose up -d --build` on the `outbound` VM, then `tailscale funnel --bg 127.0.0.1:8081` to expose at `https://linkedin.tail73224f.ts.net`.
+See [deploy/README.md](deploy/README.md) for the full VM setup. Currently live at **`https://tg-mcp.tail73224f.ts.net:8443`** on the `outbound` VM, exposed via Tailscale Funnel.
 
 ## Posts folder
 
