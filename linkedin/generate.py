@@ -10,9 +10,9 @@ class GenerationError(Exception):
     pass
 
 
-def generate(system: str, user: str) -> str:
+def generate(system: str, user: str) -> None:
+    """Stream the generated text to stdout. Adds a trailing newline."""
     client = Anthropic()
-    chunks: list[str] = []
     try:
         with client.messages.stream(
             model=MODEL,
@@ -23,9 +23,7 @@ def generate(system: str, user: str) -> str:
             for text in stream.text_stream:
                 sys.stdout.write(text)
                 sys.stdout.flush()
-                chunks.append(text)
     except APIError as e:
         raise GenerationError(f"Anthropic API: {e}") from e
     sys.stdout.write("\n")
     sys.stdout.flush()
-    return "".join(chunks)

@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import clipboard, generate, posts, prompts
+from . import generate, posts, prompts
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -18,7 +18,7 @@ def load_env() -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and not os.environ.get(key):
             os.environ[key] = value
 
 
@@ -27,15 +27,22 @@ def die(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
+def read_stdin() -> str:
+    text = sys.stdin.read().strip()
+    if not text:
+        die("no input on stdin — pass the LinkedIn post (or comment) text in")
+    return text
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="linkedin",
-        description="Generate LinkedIn comments and replies from your clipboard.",
+        description="Generate LinkedIn comments and replies. Reads input from stdin, writes the result to stdout.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     comment = sub.add_parser(
-        "comment", help="Generate a comment for the post in your clipboard."
+        "comment", help="Generate a comment for the post read from stdin."
     )
     comment.add_argument(
         "--tone",
@@ -46,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reply = sub.add_parser(
         "reply",
-        help="Reply to the comment in your clipboard, using one of your posts as context.",
+        help="Reply to the comment read from stdin, using one of your posts as context.",
     )
     reply.add_argument(
         "--tone",
@@ -68,25 +75,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_comment(tone: str) -> None:
-    try:
-        post_text = clipboard.read_clipboard()
-    except clipboard.EmptyClipboardError as e:
-        die(str(e))
-
+    post_text = read_stdin()
     p = prompts.build_comment_prompt(post_text, tone)
     try:
-        output = generate.generate(p["system"], p["user"])
+        generate.generate(p["system"], p["user"])
     except generate.GenerationError as e:
         die(str(e))
-    clipboard.write_clipboard(output.strip())
-    print("→ copied to clipboard")
 
 
 def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> None:
-    try:
-        incoming = clipboard.read_clipboard()
-    except clipboard.EmptyClipboardError as e:
-        die(str(e))
+    incoming = read_stdin()
 
     try:
         if post_number is not None:
@@ -98,15 +96,16 @@ def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> Non
     except (posts.PostsEmptyError, posts.PostNotFoundError, posts.AmbiguousTitleError) as e:
         die(str(e))
 
-    print(f"(replying to comment using post {chosen.number}-{chosen.title})\n", file=sys.stderr)
+    print(
+        f"(replying using post {chosen.number}-{chosen.title})",
+        file=sys.stderr,
+    )
 
     p = prompts.build_reply_prompt(chosen.body, incoming, tone)
     try:
-        output = generate.generate(p["system"], p["user"])
+        generate.generate(p["system"], p["user"])
     except generate.GenerationError as e:
         die(str(e))
-    clipboard.write_clipboard(output.strip())
-    print("→ copied to clipboard")
 
 
 def main() -> None:

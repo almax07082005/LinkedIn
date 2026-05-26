@@ -1,6 +1,6 @@
 # linkedin
 
-Tiny local CLI that turns clipboard content into LinkedIn comments and replies. One keystroke, generated text already in your clipboard, ready to paste.
+Tiny local CLI that turns LinkedIn posts and comments into draft replies via the Anthropic API. Designed to be wired up to a macOS Shortcut so a single hotkey runs the whole copy → generate → paste loop.
 
 ## What it does
 
@@ -9,8 +9,10 @@ linkedin comment [--tone TONE]
 linkedin reply   [--tone TONE] [--post N | --title TEXT]
 ```
 
-- **`linkedin comment`** — reads the LinkedIn post in your clipboard, generates a single comment, copies it back to the clipboard.
-- **`linkedin reply`** — reads the incoming comment in your clipboard, pulls one of *your own* posts from the `posts/` folder (latest by default), generates an author-voice reply, copies it back. `--post 3` picks post `003-...txt`; `--title onboarding` picks the post whose filename slug contains "onboarding" (case-insensitive). The two selectors are mutually exclusive.
+The CLI reads input from **stdin** and writes the generated text to **stdout**. It does not touch the clipboard itself — macOS Shortcuts handles that, which keeps emojis and Unicode bold characters intact (Apple's `pbcopy`/`pbpaste` mangle them depending on locale).
+
+- **`linkedin comment`** — stdin is the LinkedIn post you want to comment on; stdout is the generated comment.
+- **`linkedin reply`** — stdin is the incoming comment on YOUR post; stdout is an author-voice reply. The CLI picks one of *your* posts from the `posts/` folder (latest by default) to use as context. `--post 3` picks post `003-...txt`; `--title onboarding` picks the post whose filename slug contains "onboarding" (case-insensitive). The two selectors are mutually exclusive.
 
 Default tone is `casual`. Override with `--tone professional`, `--tone encouraging`, or `--tone thoughtprovoking`.
 
@@ -27,14 +29,17 @@ cp .env.example .env
 
 The `--editable` flag is important: the CLI resolves `posts/` and `.env` relative to its package location, so it needs to point back at this repo (not the uv tool's site-packages). If you ever move the repo, run `uv tool install --reinstall --editable .` from the new location.
 
-Verify:
+## Try it from a terminal
 
 ```bash
-which linkedin
-linkedin comment --help
+echo "We just hit 100 customers..." | linkedin comment
 ```
 
-If `uv` isn't your thing, `pipx install .` works the same way.
+You'll see the generated comment stream to stdout. Pipe through `pbcopy` if you want to capture it manually, but the real workflow is via Shortcuts (next section).
+
+## macOS Shortcuts setup
+
+See [shortcuts/README.md](shortcuts/README.md) for binding `linkedin comment` and `linkedin reply` to keyboard shortcuts. The Shortcut configuration is the standard "Get Clipboard → Run Shell Script (input via stdin) → Copy to Clipboard" pattern, which preserves UTF-8 emoji and Unicode bold characters that go through `pbcopy` directly would corrupt.
 
 ## Posts folder
 
@@ -51,10 +56,6 @@ File contents are **LinkedIn-verbatim** — exactly what you posted, including U
 
 `reply` defaults to the highest-numbered post. With no posts present, `reply` errors clearly. `comment` doesn't touch `posts/` at all.
 
-## macOS Shortcuts setup
-
-See [shortcuts/README.md](shortcuts/README.md) for binding `linkedin comment` and `linkedin reply` to keyboard shortcuts via the Shortcuts app.
-
 ## Configuration
 
 `.env` in the repo root:
@@ -69,7 +70,7 @@ That's it. The CLI loads `.env` from this directory regardless of where it's inv
 
 The CLI exits non-zero with a stderr message on:
 
-- empty clipboard
+- empty stdin
 - missing `ANTHROPIC_API_KEY`
 - `linkedin reply` with empty `posts/`
 - `--post N` / `--title TEXT` that doesn't match anything (or matches more than one for title)

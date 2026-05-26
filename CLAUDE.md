@@ -6,17 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A small Python CLI named `linkedin` with two subcommands:
 
-- `linkedin comment [--tone TONE]` — clipboard → comment → clipboard.
-- `linkedin reply [--tone TONE] [--post N | --title TEXT]` — clipboard (= incoming comment) + a post from `posts/` (latest by default) → reply → clipboard.
+- `linkedin comment [--tone TONE]` — stdin (the LinkedIn post) → stdout (the generated comment).
+- `linkedin reply [--tone TONE] [--post N | --title TEXT]` — stdin (the incoming comment) + a post from `posts/` (latest by default) → stdout (the reply).
 
 Tones: `professional`, `casual` (default), `encouraging`, `thoughtprovoking`. `--post` and `--title` are mutually exclusive.
+
+The CLI deliberately does **not** touch the clipboard. macOS Shortcuts wraps it with "Get Clipboard" → "Run Shell Script (input via stdin)" → "Copy to Clipboard" actions, which preserves UTF-8 emoji and Unicode bold characters that go through `pbcopy`/`pbpaste` directly would corrupt (locale-dependent).
 
 ## Stack
 
 - Python 3.10+, single package `linkedin/`.
 - Only runtime dep: `anthropic` (Python SDK).
-- Distributed via `uv tool install .` (or `pipx install .`).
-- macOS-only (clipboard uses `pbpaste` / `pbcopy`).
+- Distributed via `uv tool install --editable .` (or `pipx install -e .`).
+- macOS-targeted (intended invocation is via Shortcuts.app), but the CLI itself is portable — anywhere stdin/stdout pipes work.
 
 ## Commands
 
@@ -39,11 +41,10 @@ uv run python -m linkedin comment
 
 ```
 linkedin/
-├── cli.py         # argparse, subcommand dispatch, .env loading, error formatting
+├── cli.py         # argparse, subcommand dispatch, .env loading, stdin reader, error formatting
 ├── prompts.py     # MAX_OUTPUT_CHARS=200, all four tone blocks, comment + reply prompt builders
-├── generate.py    # Anthropic streaming call (model=claude-sonnet-4-6, max_tokens=220)
-├── posts.py       # posts/ loader: list_posts, latest_post, post_by_number, post_by_title
-└── clipboard.py   # pbpaste / pbcopy wrappers + EmptyClipboardError
+├── generate.py    # Anthropic streaming call (model=claude-sonnet-4-6, max_tokens=220); writes to stdout
+└── posts.py       # posts/ loader: list_posts, latest_post, post_by_number, post_by_title
 ```
 
 Posts live in `posts/` next to the package, named `<number>-<slug>.txt`. The CLI **reads** posts but never writes to that folder.
