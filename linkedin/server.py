@@ -2,8 +2,8 @@
 
 Endpoints (all return JSON):
     GET  /healthz                 — open, returns {"ok": true}
-    POST /comment                 — auth, generates a comment from {"post", "tone"}
-    POST /reply                   — auth, generates a reply from {"comment", "tone", "post_number"|"post_title"}
+    POST /comment                 — auth, generates a comment from {"post"}
+    POST /reply                   — auth, generates a reply from {"comment", "post_number"|"post_title"}
 
 Auth: every protected endpoint requires `Authorization: Bearer <LINKEDIN_API_TOKEN>`.
 Token is read from the LINKEDIN_API_TOKEN env var at request time.
@@ -60,7 +60,6 @@ def require_bearer(authorization: str = Header(default="")) -> None:
 
 class CommentRequest(BaseModel):
     post: str = Field(..., min_length=1, description="The LinkedIn post text to comment on.")
-    tone: str = Field(default=prompts.DEFAULT_TONE, description="One of: " + ", ".join(prompts.TONES))
 
 
 class CommentResponse(BaseModel):
@@ -70,7 +69,6 @@ class CommentResponse(BaseModel):
 
 class ReplyRequest(BaseModel):
     comment: str = Field(..., min_length=1, description="The incoming comment you are replying to.")
-    tone: str = Field(default=prompts.DEFAULT_TONE, description="One of: " + ", ".join(prompts.TONES))
     post_number: Optional[int] = Field(default=None, description="Use post #N from posts/.")
     post_title: Optional[str] = Field(default=None, description="Use the post whose slug contains this text.")
 
@@ -106,10 +104,7 @@ def healthz() -> dict:
 
 @app.post("/comment", response_model=CommentResponse, dependencies=[Depends(require_bearer)])
 def comment(req: CommentRequest) -> CommentResponse:
-    if req.tone not in prompts.TONES:
-        raise bad_request(f"tone must be one of {list(prompts.TONES)}")
-
-    p = prompts.build_comment_prompt(req.post, req.tone)
+    p = prompts.build_comment_prompt(req.post)
     try:
         text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:
@@ -119,8 +114,6 @@ def comment(req: CommentRequest) -> CommentResponse:
 
 @app.post("/reply", response_model=ReplyResponse, dependencies=[Depends(require_bearer)])
 def reply(req: ReplyRequest) -> ReplyResponse:
-    if req.tone not in prompts.TONES:
-        raise bad_request(f"tone must be one of {list(prompts.TONES)}")
     if req.post_number is not None and req.post_title is not None:
         raise bad_request("pass at most one of post_number or post_title")
 
@@ -138,7 +131,7 @@ def reply(req: ReplyRequest) -> ReplyResponse:
     except posts.AmbiguousTitleError as e:
         raise HTTPException(status_code=409, detail={"error": str(e), "code": "ambiguous_title"})
 
-    p = prompts.build_reply_prompt(chosen.body, req.comment, req.tone)
+    p = prompts.build_reply_prompt(chosen.body, req.comment)
     try:
         text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:

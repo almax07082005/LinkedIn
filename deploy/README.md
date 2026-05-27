@@ -111,7 +111,7 @@ ssh outbound 'cd /root/linkedin && git pull && docker compose up -d --build'
 
 ## iPhone Shortcuts wiring
 
-Create one Shortcut per action you want. Example: **LinkedIn — Comment (Casual)**:
+Create one Shortcut per action you want. Example: **LinkedIn — Comment**:
 
 1. **Get Clipboard** (action).
 2. **Get Contents of URL** (action):
@@ -122,7 +122,6 @@ Create one Shortcut per action you want. Example: **LinkedIn — Comment (Casual
      - `Content-Type`: `application/json`
    - **Request Body**: `JSON`
      - `post` → Clipboard (the output of step 1, use the magic-variable picker)
-     - `tone` → `casual`
 3. **Get Dictionary Value** (action):
    - Input: Contents of URL (output of step 2)
    - Get: Value
@@ -141,8 +140,6 @@ For **Reply**, the same shape but:
 - URL: `…/reply`
 - Body key: `comment` instead of `post`
 - Optional extra keys: `post_number` (integer) or `post_title` (string) — omit both for "latest post".
-
-For other tones, duplicate the Shortcut and change the `tone` value (`professional`, `encouraging`, `thoughtprovoking`).
 
 ## Troubleshooting
 

@@ -41,25 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    comment = sub.add_parser(
-        "comment", help="Generate a comment for the post read from stdin."
-    )
-    comment.add_argument(
-        "--tone",
-        choices=prompts.TONES,
-        default=prompts.DEFAULT_TONE,
-        help=f"Tone (default: {prompts.DEFAULT_TONE}).",
-    )
+    sub.add_parser("comment", help="Generate a comment for the post read from stdin.")
 
     reply = sub.add_parser(
         "reply",
         help="Reply to the comment read from stdin, using one of your posts as context.",
-    )
-    reply.add_argument(
-        "--tone",
-        choices=prompts.TONES,
-        default=prompts.DEFAULT_TONE,
-        help=f"Tone (default: {prompts.DEFAULT_TONE}).",
     )
     post_selector = reply.add_mutually_exclusive_group()
     post_selector.add_argument(
@@ -74,9 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def cmd_comment(tone: str) -> None:
+def cmd_comment() -> None:
     post_text = read_stdin()
-    p = prompts.build_comment_prompt(post_text, tone)
+    p = prompts.build_comment_prompt(post_text)
     try:
         text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:
@@ -84,7 +70,7 @@ def cmd_comment(tone: str) -> None:
     print(text)
 
 
-def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> None:
+def cmd_reply(post_number: int | None, post_title: str | None) -> None:
     incoming = read_stdin()
 
     try:
@@ -102,7 +88,7 @@ def cmd_reply(tone: str, post_number: int | None, post_title: str | None) -> Non
         file=sys.stderr,
     )
 
-    p = prompts.build_reply_prompt(chosen.body, incoming, tone)
+    p = prompts.build_reply_prompt(chosen.body, incoming)
     try:
         text = generate.generate_text(p["system"], p["user"])
     except generate.GenerationError as e:
@@ -118,6 +104,6 @@ def main() -> None:
         die("ANTHROPIC_API_KEY is not set (add it to .env or export it)")
 
     if args.command == "comment":
-        cmd_comment(args.tone)
+        cmd_comment()
     elif args.command == "reply":
-        cmd_reply(args.tone, args.post, args.title)
+        cmd_reply(args.post, args.title)

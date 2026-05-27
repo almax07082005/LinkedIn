@@ -44,16 +44,6 @@ Copy that absolute path — you'll paste it into Shortcuts. (Shortcuts.app doesn
 
 Repeat for **LinkedIn — Reply**, this time with script body `… linkedin reply` and a different hotkey (e.g. **⌃⌥⌘R**).
 
-## Optional: per-tone Shortcuts
-
-Want one-keystroke access to non-default tones? Duplicate the Shortcut and change just the script line:
-
-- `… linkedin comment --tone professional` → ⌃⌥⌘P
-- `… linkedin comment --tone encouraging` → ⌃⌥⌘E
-- `… linkedin comment --tone thoughtprovoking` → ⌃⌥⌘T
-
-Same three-action recipe.
-
 ## Test
 
 1. Copy a sample LinkedIn post to your clipboard.

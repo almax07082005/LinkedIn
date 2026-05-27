@@ -9,9 +9,9 @@ LinkedIn comment / reply generator with two equivalent surfaces:
 - a local **CLI** (`linkedin comment` / `linkedin reply`) — stdin → stdout, designed to be wrapped by a macOS Shortcut
 - a **FastAPI HTTP service** (`linkedin-server`, or via `docker compose up`) — `POST /comment` / `POST /reply` with bearer-token auth, JSON request/response
 
-Both share the same prompts, tone definitions, generation logic, and `posts/` loader. The CLI exists for the Mac; the HTTP service exists for the iPhone (and any other HTTP client).
+Both share the same prompts, generation logic, and `posts/` loader. The CLI exists for the Mac; the HTTP service exists for the iPhone (and any other HTTP client).
 
-Tones: `professional`, `casual` (default), `encouraging`, `thoughtprovoking`.
+Tone is fixed to casual (friendly-colleague voice). The previous multi-tone selector was removed — `prompts.py` inlines the casual block directly and neither the CLI nor the server takes a `tone` parameter.
 
 ## Stack
 
@@ -26,7 +26,7 @@ Tones: `professional`, `casual` (default), `encouraging`, `thoughtprovoking`.
 ```
 linkedin/
 ├── cli.py         # argparse, subcommand dispatch, .env loading, stdin reader
-├── prompts.py     # MAX_OUTPUT_CHARS=200, all four tone blocks, comment + reply prompt builders
+├── prompts.py     # MAX_OUTPUT_CHARS=200, casual tone block, comment + reply prompt builders
 ├── generate.py    # Anthropic call: generate_text(system, user) -> str (no I/O)
 ├── posts.py       # posts/ loader: list_posts, latest_post, post_by_number, post_by_title + errors
 └── server.py      # FastAPI app: /healthz, /comment, /reply, bearer auth, JSON I/O

@@ -1,6 +1,6 @@
 # linkedin
 
-LinkedIn comment / reply generator. Same prompts and tones in two shapes:
+LinkedIn comment / reply generator. Same casual-tone prompts in two shapes:
 
 - a local **CLI** (`linkedin comment` / `linkedin reply`) you wire to a macOS Shortcut for one-keystroke generation from your Mac
 - a **FastAPI HTTP service** you run on a server, callable from iPhone Shortcuts (or anywhere) via `POST /comment` / `POST /reply` with a bearer token
@@ -10,8 +10,8 @@ Both share the same generation logic ([linkedin/prompts.py](linkedin/prompts.py)
 ## Local CLI
 
 ```
-linkedin comment [--tone TONE]
-linkedin reply   [--tone TONE] [--post N | --title TEXT]
+linkedin comment
+linkedin reply [--post N | --title TEXT]
 ```
 
 The CLI reads input from **stdin** and writes the generated text to **stdout**. macOS Shortcuts handles clipboard I/O at both ends — see [shortcuts/README.md](shortcuts/README.md).
@@ -19,7 +19,7 @@ The CLI reads input from **stdin** and writes the generated text to **stdout**. 
 - **`linkedin comment`** — stdin = LinkedIn post; stdout = generated comment.
 - **`linkedin reply`** — stdin = incoming comment on YOUR post; stdout = author-voice reply. Pulls a post from `posts/` (latest by default; `--post 3` or `--title onboarding` to pick a specific one; flags are mutually exclusive).
 
-Default tone is `casual`. Other tones: `professional`, `encouraging`, `thoughtprovoking`.
+Tone is always casual — friendly-colleague voice with light emoji use.
 
 ### Install (CLI)
 
@@ -45,9 +45,9 @@ echo "We just hit 100 customers..." | linkedin comment
 Run as a FastAPI app. Used by iPhone Shortcuts and any other HTTP client. Same generation logic, bearer-token-auth, JSON request/response.
 
 ```
-POST /comment   { "post": "...", "tone": "casual" }              → { "text": "...", "chars": N }
-POST /reply     { "comment": "...", "tone": "...", "post_number": N | "post_title": "..." }
-                                                                 → { "text": "...", "chars": N, "post_used": "NNN-slug" }
+POST /comment   { "post": "..." }                                 → { "text": "...", "chars": N }
+POST /reply     { "comment": "...", "post_number": N | "post_title": "..." }
+                                                                  → { "text": "...", "chars": N, "post_used": "NNN-slug" }
 GET  /healthz                                                     → { "ok": true }    (no auth)
 ```
 
