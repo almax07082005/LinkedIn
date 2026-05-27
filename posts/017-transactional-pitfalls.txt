@@ -1,0 +1,17 @@
+𝗪𝗲 𝘁𝗵𝗿𝗲𝘄 𝗮𝗻 𝗲𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻. 𝗧𝗵𝗲 𝗹𝗼𝗴𝘀 𝘀𝗵𝗼𝘄𝗲𝗱 𝘁𝗵𝗲 𝗳𝗮𝗶𝗹𝘂𝗿𝗲. 𝗧𝗵𝗲 𝘁𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗰𝗼𝗺𝗺𝗶𝘁𝘁𝗲𝗱 𝗮𝗻𝘆𝘄𝗮𝘆. 😅
+
+In one of the payment services, we had a custom PaymentException — a checked exception modeling business-level failures across the domain layer. The processing method was properly annotated with @𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹, the exception propagated up correctly, but the partial state already written to the database stayed there. Because by default, Spring only rolls back transactions for 𝗥𝘂𝗻𝘁𝗶𝗺𝗲𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 and 𝗘𝗿𝗿𝗼𝗿. Checked exceptions do not trigger rollback unless you explicitly declare 𝗿𝗼𝗹𝗹𝗯𝗮𝗰𝗸𝗙𝗼𝗿 = 𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻.𝗰𝗹𝗮𝘀𝘀. It's in the documentation, but it still catches teams working in domains where checked exceptions are a natural fit for business failures.
+
+That was the first issue. Then there's self-invocation.
+
+If you call a method annotated with @𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹(𝗽𝗿𝗼𝗽𝗮𝗴𝗮𝘁𝗶𝗼𝗻 = 𝗥𝗘𝗤𝗨𝗜𝗥𝗘𝗦_𝗡𝗘𝗪) from another method in the same class, the Spring proxy is never involved. AOP intercepts calls through the proxy, not through 𝘁𝗵𝗶𝘀, so the propagation setting is silently ignored and the method simply joins the outer transaction. Audit records, notification writes, anything you wanted isolated — they all roll back with the main flow when something fails.
+
+Extracting the method to a separate bean solves it, but it's one of those bugs that hides perfectly behind code that looks correct on every level.
+
+And one more: @𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹 on a private method simply does nothing — no warning, no error, just silent incorrect behavior.
+
+𝗔𝗹𝗹 𝘁𝗵𝗿𝗲𝗲 𝘀𝗵𝗮𝗿𝗲 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗿𝗼𝗼𝘁 — Spring's proxy-based AOP has real boundaries that aren't visible from the annotation alone. And production is usually where you find them.
+
+What @𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹 gotcha hit you hardest? 👇
+
+#Java #SpringBoot #Spring #Backend #SoftwareEngineering #JavaDeveloper
