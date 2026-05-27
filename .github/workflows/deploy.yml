@@ -1,0 +1,35 @@
+name: Deploy to outbound
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-outbound
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.OUTBOUND_SSH_KEY }}
+          HOST: ${{ secrets.OUTBOUND_HOST }}
+          HOST_KEY: ${{ secrets.OUTBOUND_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s %s\n' "$HOST" "$HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pull and rebuild on outbound
+        env:
+          HOST: ${{ secrets.OUTBOUND_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "root@$HOST" \
+            'set -e; cd /root/linkedin && git pull --ff-only && docker compose up -d --build'
