@@ -1,0 +1,26 @@
+𝗬𝗼𝘂𝗿 𝗝𝗣𝗔 𝗾𝘂𝗲𝗿𝘆 𝗹𝗼𝗼𝗸𝘀 𝗰𝗹𝗲𝗮𝗻. 𝗬𝗼𝘂𝗿 𝗱𝗮𝘁𝗮𝗯𝗮𝘀𝗲 𝗶𝘀 𝗿𝘂𝗻𝗻𝗶𝗻𝗴 𝟯𝟬𝟬 𝗾𝘂𝗲𝗿𝗶𝗲𝘀 𝗶𝗻𝘀𝘁𝗲𝗮𝗱 𝗼𝗳 𝗼𝗻𝗲. ⚠️
+
+We had a payment history endpoint that worked fine in testing — response times looked acceptable, the code was readable, nothing alarming. Then we started monitoring actual database query counts in production.
+
+One API call. Over two hundred SQL statements fired against the database.
+
+That's the N+1 problem — and it's one of the sneakiest performance killers in JPA-based systems.
+
+What usually happens: you fetch a list of entities, and for each entity Hibernate lazily loads a related collection with a separate query. The code looks completely innocent. The database gets hammered on every single request.
+
+The fix is straightforward once you know what to look for. Using 𝗙𝗘𝗧𝗖𝗛 𝗝𝗢𝗜𝗡 in JPQL or defining an 𝗘𝗻𝘁𝗶𝘁𝘆𝗚𝗿𝗮𝗽𝗵 lets Hibernate load everything in a single roundtrip. But there's a trap — applying fetch join blindly against collection associations causes a Cartesian product issue, where the result set multiplies with each joined collection. Hibernate's HHH90003004 warning is your signal that something is off.
+
+What ended up working for us:
+
+→ 𝗙𝗘𝗧𝗖𝗛 𝗝𝗢𝗜𝗡 only for single associations (many-to-one, one-to-one)
+→ 𝗕𝗮𝘁𝗰𝗵𝗦𝗶𝘇𝗲 for collections — multiple small batches instead of N individual queries
+→ Enabling 𝗵𝗶𝗯𝗲𝗿𝗻𝗮𝘁𝗲.𝘀𝘁𝗮𝘁𝗶𝘀𝘁𝗶𝗰𝘀 in dev to catch this before it reaches production
+→ Projections and DTO queries when you only need a subset of fields — no full entity loading involved
+
+The uncomfortable truth: this isn't a beginner mistake. I've seen it in codebases maintained by experienced teams. JPA's lazy loading is convenient right up until it quietly degrades your system under real load — and it degrades gradually enough that you might not notice until latency is already a real problem.
+
+Now I check query counts as part of any performance investigation. It's rarely the first thing people look at — but it's often the answer.
+
+Have you ever caught N+1 queries hiding in production? How did you find it? 👇
+
+#Java #JPA #Hibernate #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper #Performance
