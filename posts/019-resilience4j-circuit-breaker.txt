@@ -1,0 +1,24 @@
+𝗢𝗻𝗲 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝘀𝘁𝗮𝗿𝘁𝗲𝗱 𝗵𝗮𝗻𝗴𝗶𝗻𝗴 𝗼𝗻 𝗿𝗲𝘀𝗽𝗼𝗻𝘀𝗲𝘀. 𝗙𝗶𝗳𝘁𝗲𝗲𝗻 𝗺𝗶𝗻𝘂𝘁𝗲𝘀 𝗹𝗮𝘁𝗲𝗿, 𝗲𝘃𝗲𝗿𝘆𝘁𝗵𝗶𝗻𝗴 𝗲𝗹𝘀𝗲 𝘄𝗮𝘀 𝗴𝗼𝗶𝗻𝗴 𝗱𝗼𝘄𝗻 𝘄𝗶𝘁𝗵 𝗶𝘁. ⚡
+
+This is what happens when retries are your only resilience tool.
+
+We had a payment service with several external integrations running in parallel. One provider started responding slowly — not completely down, just hanging for 10–15 seconds instead of the usual 2. Retries kicked in, threads accumulated, connection pools started filling up, and within minutes other integrations that were completely stable began timing out as well. One degraded provider turned into a full service incident affecting everything.
+
+The missing piece wasn't better retry logic. It was 𝗳𝗮𝗶𝗹𝘂𝗿𝗲 𝗶𝘀𝗼𝗹𝗮𝘁𝗶𝗼𝗻 between integrations.
+
+We added Resilience4j circuit breakers on all outbound HTTP calls. When an integration starts failing consistently above a threshold, the circuit opens — subsequent calls fail immediately without blocking threads on timeouts. After a cooldown window it enters half-open state and allows one probe request through. If that succeeds, the circuit closes and normal traffic resumes.
+
+What actually made the difference in production:
+
+• configuring 𝘀𝗹𝗼𝘄 𝗰𝗮𝗹𝗹 𝗱𝘂𝗿𝗮𝘁𝗶𝗼𝗻 threshold alongside error rate — a hanging call is a failure even if it eventually returns
+• 𝘀𝗲𝗽𝗮𝗿𝗮𝘁𝗲 𝗰𝗶𝗿𝗰𝘂𝗶𝘁 𝗽𝗲𝗿 𝗶𝗻𝘁𝗲𝗴𝗿𝗮𝘁𝗶𝗼𝗻 — one broken provider can't exhaust shared thread pools and take others down
+• fallback responses for non-critical paths to keep the service partially functional during degradation
+• circuit state metrics exposed per integration for monitoring — open circuits become visible incidents, not silent slowdowns
+
+The insight that stuck with me: a circuit breaker doesn't prevent failures — it 𝗰𝗼𝗻𝘁𝗮𝗶𝗻𝘀 𝘁𝗵𝗲𝗺. Retries handle transient blips. Circuit breakers handle systemic degradation. They solve completely different problems and both are necessary 🙂
+
+After rolling this out, provider degradations became isolated events instead of service-wide incidents. The on-call rotation got considerably quieter.
+
+Have you ever had a single slow downstream cascade into something much bigger? Drop your story in the comments 👇
+
+#Java #SpringBoot #Resilience4j #Backend #SoftwareEngineering #Microservices #JavaDeveloper
