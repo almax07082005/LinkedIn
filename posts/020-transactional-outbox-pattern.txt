@@ -1,0 +1,25 @@
+𝗪𝗲 𝗰𝗼𝗺𝗺𝗶𝘁 𝘁𝗵𝗲 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝘁𝗼 𝗣𝗼𝘀𝘁𝗴𝗿𝗲𝗦𝗤𝗟. 𝗪𝗲 𝗽𝘂𝗯𝗹𝗶𝘀𝗵 𝘁𝗵𝗲 𝗲𝘃𝗲𝗻𝘁 𝘁𝗼 𝗞𝗮𝗳𝗸𝗮. 𝗧𝘄𝗼 𝘄𝗿𝗶𝘁𝗲𝘀, 𝘁𝘄𝗼 𝘀𝘆𝘀𝘁𝗲𝗺𝘀, 𝗮𝗻𝗱 𝘇𝗲𝗿𝗼 𝗴𝘂𝗮𝗿𝗮𝗻𝘁𝗲𝗲 𝘁𝗵𝗲𝘆 𝗯𝗼𝘁𝗵 𝘀𝘂𝗰𝗰𝗲𝗲𝗱 𝘁𝗼𝗴𝗲𝘁𝗵𝗲𝗿. 😬
+
+For a long time our flow looked completely reasonable: inside the same method we saved the operation to the database and then sent a message to Kafka so downstream services could react to it. It passed every code review, because at a glance it reads like one clean atomic action. It isn't. The database commit and the broker publish are two independent network operations, and the gap between them is exactly where production likes to hurt you the most.
+
+Picture the ugly cases for a second. The transaction commits, the service crashes before the Kafka send returns, and now the payment exists in the database but no event was ever emitted, so everything downstream stays completely blind to it. Or the reverse happens: you publish the event first, the surrounding transaction rolls back afterwards, and now there is a message describing a payment that never actually occurred. This is the classic 𝗱𝘂𝗮𝗹-𝘄𝗿𝗶𝘁𝗲 𝗽𝗿𝗼𝗯𝗹𝗲𝗺, and no amount of try/catch wrapped around the producer call makes it disappear, because the failure can land precisely in the microsecond between those two operations.
+
+The fix that finally made this whole thing boring is the 𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹 𝗢𝘂𝘁𝗯𝗼𝘅 𝗽𝗮𝘁𝘁𝗲𝗿𝗻. Instead of writing to two systems at the same time, you commit to exactly one. In the very same database transaction that persists the operation, you also insert a row into an outbox table, so either both of them land or neither does, which is just normal ACID behavior and nothing exotic at all. The event is now durably stored right next to the business state that it describes.
+
+A separate relay process then reads the unpublished rows from that outbox table and pushes them to Kafka, marking each row as sent only after the broker actually acknowledges it. If the relay crashes somewhere in the middle, it simply re-reads the same pending rows on restart and resends them, which is exactly why your consumers still have to stay idempotent. The pattern does not magically remove duplicates, it removes 𝗹𝗼𝘀𝘁 𝗲𝘃𝗲𝗻𝘁𝘀, trading the impossible "two systems, one atomic write" for the very solvable "at-least-once delivery from a single durable source of truth".
+
+A few things that really mattered once this hit real production traffic 👇
+
+• polling the outbox in small ordered batches, so relay throughput stays predictable instead of spiking when the table fills up under load
+
+• keeping a proper index on the unpublished rows, otherwise the relay query slowly degrades into a sequential scan as the table keeps growing
+
+• an archival or cleanup job for already-sent rows, because an outbox table that only ever grows will eventually become its own production incident
+
+• preserving event ordering per aggregate whenever your downstream consumers genuinely depend on the sequence of changes
+
+The real mental shift for me was finally accepting that "save to the DB and then send to Kafka" is never truly one step, no matter how innocent it looks sitting there in the code. Once the event lives inside the same transaction as the state change itself, that entire category of "the data clearly says X but nobody downstream was ever told" bugs simply stops existing.
+
+Have you shipped the outbox pattern in production yourself, or do you lean on something like CDC with Debezium to read the transaction log directly instead? Tell me what actually worked for you down in the comments 👇
+
+#Java #SpringBoot #Kafka #Backend #Microservices #SoftwareEngineering #JavaDeveloper #DistributedSystems
