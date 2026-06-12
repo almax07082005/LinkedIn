@@ -1,0 +1,15 @@
+𝗧𝗵𝗲 𝗮𝗺𝗼𝘂𝗻𝘁 𝗶𝗻 𝗼𝘂𝗿 𝗱𝗮𝘁𝗮𝗯𝗮𝘀𝗲 𝘄𝗮𝘀 𝟭𝟬.𝟬𝟬. 𝗧𝗵𝗲 𝗮𝗺𝗼𝘂𝗻𝘁 𝗶𝗻 𝗼𝘂𝗿 𝗰𝗼𝗱𝗲 𝘄𝗮𝘀 𝟭𝟬.𝟬. 𝗔𝗻𝗱 𝘁𝗵𝗲 𝗲𝗾𝘂𝗮𝗹𝗶𝘁𝘆 𝗰𝗵𝗲𝗰𝗸 𝗸𝗲𝗽𝘁 𝗶𝗻𝘀𝗶𝘀𝘁𝗶𝗻𝗴 𝘁𝗵𝗲𝘆 𝘄𝗲𝗿𝗲 𝘁𝘄𝗼 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗹𝘆 𝗱𝗶𝗳𝗳𝗲𝗿𝗲𝗻𝘁 𝘃𝗮𝗹𝘂𝗲𝘀. 😬
+
+This lived inside a reconciliation job in a payment service, the kind of code nobody looks at twice because it is "just comparing two numbers". We were matching the amount we had stored against the amount a provider reported back, and for one specific slice of transactions the comparison kept failing even though the values were very obviously the same money. The bug was not in the provider, not in the database, and not in some exotic rounding edge case. It was 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹.𝗲𝗾𝘂𝗮𝗹𝘀() doing precisely what the documentation promises it does.
+
+Here is the part that catches almost everyone the first time. 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹 treats scale as part of equality, so 𝟭𝟬.𝟬 and 𝟭𝟬.𝟬𝟬 are equal in value but not equal as objects, because one carries scale 1 and the other scale 2, and 𝗲𝗾𝘂𝗮𝗹𝘀() compares the unscaled value together with the scale. The moment your two amounts travel through different code paths, one parsed from a string and one read from a numeric column, their scales quietly drift apart and a perfectly correct-looking comparison starts returning false. The fix is boring and absolutely critical: for money you compare with 𝗰𝗼𝗺𝗽𝗮𝗿𝗲𝗧𝗼() == 𝟬, never with 𝗲𝗾𝘂𝗮𝗹𝘀().
+
+And that is only the comparison trap. The construction trap is arguably nastier. Writing 𝗻𝗲𝘄 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹(𝟬.𝟭) does not give you 0.1 at all, it faithfully captures the entire binary floating point error and hands you something closer to 0.1000000000000000055511151231257827. If your amount ever passed through a 𝗱𝗼𝘂𝗯𝗹𝗲 on its way in, the damage is already baked in long before BigDecimal ever sees it. That is exactly why money should never touch 𝗱𝗼𝘂𝗯𝗹𝗲 or 𝗳𝗹𝗼𝗮𝘁 anywhere in the pipeline, and why you build amounts from a string or from 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹.𝘃𝗮𝗹𝘂𝗲𝗢𝗳() rather than a raw double literal.
+
+The third one only shows up at runtime. Calling 𝗱𝗶𝘃𝗶𝗱𝗲() on two BigDecimals whose result is a non-terminating decimal throws 𝗔𝗿𝗶𝘁𝗵𝗺𝗲𝘁𝗶𝗰𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 instead of silently rounding for you, so every division of money needs an explicit scale and a deliberate 𝗥𝗼𝘂𝗻𝗱𝗶𝗻𝗴𝗠𝗼𝗱𝗲 — usually 𝗛𝗔𝗟𝗙_𝗘𝗩𝗘𝗡 for financial work, because plain 𝗛𝗔𝗟𝗙_𝗨𝗣 introduces a small systematic bias once you start aggregating millions of operations.
+
+The deeper lesson I keep relearning is that money is not really a number, it is a number plus a scale plus a rounding policy, and the language gives you none of that for free. Treat amounts as 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹 end to end, compare them with compareTo, round them on purpose, and an entire category of "the totals are off by a cent and nobody knows why" incidents simply stops existing.
+
+How do you represent money in your services — 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹 everywhere, integer minor units (cents as a 𝗹𝗼𝗻𝗴), or a dedicated Money type wrapping all of this? Curious what has actually held up for you under real volume 👇
+
+#Java #BigDecimal #Fintech #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper #Money
