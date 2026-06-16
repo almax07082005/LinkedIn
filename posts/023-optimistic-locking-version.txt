@@ -1,0 +1,21 @@
+𝗧𝘄𝗼 𝗿𝗲𝗾𝘂𝗲𝘀𝘁𝘀 𝗿𝗲𝗮𝗱 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗿𝗼𝘄. 𝗕𝗼𝘁𝗵 𝘄𝗿𝗼𝘁𝗲 𝗶𝘁 𝗯𝗮𝗰𝗸. 𝗢𝗻𝗲 𝘂𝗽𝗱𝗮𝘁𝗲 𝘀𝗶𝗹𝗲𝗻𝘁𝗹𝘆 𝘃𝗮𝗻𝗶𝘀𝗵𝗲𝗱, 𝘄𝗶𝘁𝗵 𝗻𝗼𝘁 𝗮 𝘀𝗶𝗻𝗴𝗹𝗲 𝗲𝗿𝗿𝗼𝗿 𝗹𝗼𝗴𝗴𝗲𝗱. 😬
+
+This one didn't live in the hot payment path — we'd covered that with row-level locking ages ago. It hid in an admin screen where two operators could edit the same merchant limit config, the kind of endpoint where nobody stops to think about concurrency because "who edits the same record at the same time anyway".
+
+Turns out: people do. Operator A loads the entity and changes the daily limit. Operator B loaded it a second earlier and changes the currency list. Both persist the full object back, the last commit wins, quietly overwriting the field the other one just changed. No exception, no conflict, no log line — just a 𝗹𝗼𝘀𝘁 𝘂𝗽𝗱𝗮𝘁𝗲 and a confused support ticket days later.
+
+This is exactly the gap 𝗼𝗽𝘁𝗶𝗺𝗶𝘀𝘁𝗶𝗰 𝗹𝗼𝗰𝗸𝗶𝗻𝗴 is built for. You add a @𝗩𝗲𝗿𝘀𝗶𝗼𝗻 column to the entity, and Hibernate starts appending 𝗪𝗛𝗘𝗥𝗘 𝘃𝗲𝗿𝘀𝗶𝗼𝗻 = ? to every UPDATE and bumping it on commit. If the row changed between your read and your write, the UPDATE matches zero rows, and instead of silently overwriting, Hibernate throws an 𝗢𝗽𝘁𝗶𝗺𝗶𝘀𝘁𝗶𝗰𝗟𝗼𝗰𝗸𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 (wrapped by Spring). The conflict becomes loud and catchable instead of invisible.
+
+The contrast with 𝗦𝗘𝗟𝗘𝗖𝗧 𝗙𝗢𝗥 𝗨𝗣𝗗𝗔𝗧𝗘 is what made it click. Pessimistic locking grabs a real DB lock for the whole transaction — perfect for a hot, contended row, but it serializes everyone and invites deadlocks. Optimistic locking holds nothing. It bets conflicts are rare and verifies that with one cheap version check at commit. For read-heavy data and edits sitting open in a UI, that bet is almost always right.
+
+But detecting the conflict is only half the job — you still have to handle it. The exception isn't a failure, it's a "someone beat you, redo your work on fresh data" signal. The unit of work has to re-read current state and re-apply the change, not replay the stale object already in memory. Two traps that cost us real time 👇
+
+• A detached entity carries its old version across a DTO boundary. Copy fields onto a fresh instance carelessly, and you clobber the version and defeat the whole mechanism.
+
+• @𝗩𝗲𝗿𝘀𝗶𝗼𝗻 only protects writes that go through the entity. A raw JPQL or native bulk UPDATE bypasses the check entirely, reopening the hole you tried to close.
+
+The deeper lesson: "this endpoint is low traffic, concurrency can't happen here" is a bet, not a fact — and in financial data the cost of losing it is silent, wrong state nobody notices until reconciliation.
+
+How do you handle write conflicts — pessimistic 𝗦𝗘𝗟𝗘𝗖𝗧 𝗙𝗢𝗥 𝗨𝗣𝗗𝗔𝗧𝗘, optimistic @𝗩𝗲𝗿𝘀𝗶𝗼𝗻 with retries, or the isolation level? Curious what held up under load 👇
+
+#Java #SpringBoot #JPA #Hibernate #Concurrency #Backend #SoftwareEngineering #JavaDeveloper
