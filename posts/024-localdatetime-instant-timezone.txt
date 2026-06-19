@@ -1,0 +1,23 @@
+𝗧𝗵𝗲 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱 𝗮𝘁 𝟬𝟬:𝟯𝟬. 𝗧𝗵𝗲 𝗿𝗲𝗰𝗼𝗻𝗰𝗶𝗹𝗶𝗮𝘁𝗶𝗼𝗻 𝗿𝗲𝗽𝗼𝗿𝘁 𝘀𝘄𝗼𝗿𝗲 𝗶𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱 𝘆𝗲𝘀𝘁𝗲𝗿𝗱𝗮𝘆. 😬
+
+We had a settlement job that grouped transactions by calendar day, and once a month a handful of payments landed in the wrong daily batch. Never many, always near midnight, always impossible to reproduce locally. The kind of bug that makes you suspect the database long before you suspect your own code.
+
+The root cause was sitting in plain sight inside the entity: timestamps were stored as 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲. And a 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲 is just a wall-clock reading with no timezone attached — it represents "what the clock on the wall said", not "an actual instant on the global timeline". The moment one service writes that value and another service running with a different JVM default timezone reads it back, you are no longer talking about the same moment. Two pods, two interpretations, and a transaction quietly slides across the day boundary into the wrong report.
+
+And it gets worse twice a year. When daylight saving rolls the clock backward, the local hour between 02:00 and 03:00 happens 𝘁𝘄𝗶𝗰𝗲, so a 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲 in that window is honestly ambiguous — no way to know which of the two real instants it meant. In the spring-forward gap, that same local hour does not exist at all. For money, "ambiguous timestamp" is not a phrase you want anywhere near an audit.
+
+The fix is boring and absolute: store an actual instant. We moved persisted timestamps to 𝗜𝗻𝘀𝘁𝗮𝗻𝘁 (mapped to 𝘁𝗶𝗺𝗲𝘀𝘁𝗮𝗺𝗽𝘁𝘇 in PostgreSQL), kept everything in UTC end to end, and only converted to a local zone right at the edges — the UI and the reports — using an explicit 𝗭𝗼𝗻𝗲𝗜𝗱. We also pinned the JVM and the database to UTC, so nothing silently depends on which host a container started on.
+
+A few things that really mattered once this hit production 👇
+
+• reach for 𝗜𝗻𝘀𝘁𝗮𝗻𝘁 or 𝗢𝗳𝗳𝘀𝗲𝘁𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲 when the question is "when did this actually happen", and keep 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲 / 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲 only for human wall-clock concepts like a birthday
+
+• never trust the JVM default zone — 𝗟𝗼𝗰𝗮𝗹𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲.𝗻𝗼𝘄() and 𝗻𝗲𝘄 𝗗𝗮𝘁𝗲() both read it implicitly, and both will quietly betray you the second environments disagree
+
+• do "which day did this belong to" grouping by converting the instant in an explicit zone, never by trusting whatever the local form of the timestamp looks like
+
+The lesson that stuck: a timestamp without a timezone is not data, it is a guess wearing a number. And in a payment system you do not get to guess about when the money moved.
+
+How do you store time in your services — 𝗜𝗻𝘀𝘁𝗮𝗻𝘁 in UTC everywhere, 𝗢𝗳𝗳𝘀𝗲𝘁𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲, or epoch millis as a 𝗹𝗼𝗻𝗴? Curious what survived contact with daylight saving in your stack 👇
+
+#Java #SpringBoot #DateTime #Fintech #Backend #SoftwareEngineering #JavaDeveloper #PostgreSQL
