@@ -1,0 +1,23 @@
+𝗪𝗲 𝗽𝘂𝘁 𝗮 𝗝𝗣𝗔 𝗲𝗻𝘁𝗶𝘁𝘆 𝗶𝗻𝘁𝗼 𝗮 𝗛𝗮𝘀𝗵𝗦𝗲𝘁. 𝗔𝗳𝘁𝗲𝗿 𝘀𝗮𝘃𝗶𝗻𝗴 𝗶𝘁, 𝘁𝗵𝗲 𝘀𝗲𝘁 𝗰𝗼𝘂𝗹𝗱 𝗻𝗼 𝗹𝗼𝗻𝗴𝗲𝗿 𝗳𝗶𝗻𝗱 𝘁𝗵𝗲 𝗼𝗯𝗷𝗲𝗰𝘁 𝗶𝘁 𝗵𝗮𝗱 𝗷𝘂𝘀𝘁 𝘀𝘁𝗼𝗿𝗲𝗱. 😬
+
+It started with the most innocent annotation in the whole Java ecosystem. Someone put Lombok's @𝗗𝗮𝘁𝗮 on a JPA entity, the IDE stayed quiet, the review didn't blink, and every test passed because the entities were created, used and discarded inside a single transaction. The bug only surfaced much later, in a flow that gathered entities into a Set before and after a persist call.
+
+The mechanism is brutal once you see it. @𝗗𝗮𝘁𝗮 generates 𝗲𝗾𝘂𝗮𝗹𝘀() and 𝗵𝗮𝘀𝗵𝗖𝗼𝗱𝗲() across every field, including the 𝗶𝗱. A brand-new entity has a null id, so its hashCode comes out one way. The second Hibernate flushes it and the database assigns a generated id, that very same object now produces a completely different hashCode. You dropped it into one hash bucket and it silently belongs in another, so the Set still holds your object while contains() swears that it doesn't.
+
+Going the other direction is no safer. If you exclude the id and hash on the "business" fields instead, two different unsaved entities with the same empty fields collapse into one inside that Set, and a LazyInitializationException is a single toString() away the moment Lombok drags a lazy association into one of those generated methods.
+
+What actually held up for us 👇
+
+• base 𝗲𝗾𝘂𝗮𝗹𝘀() and 𝗵𝗮𝘀𝗵𝗖𝗼𝗱𝗲() on a stable business key, or on a UUID assigned in the constructor before the entity ever reaches the database
+
+• a 𝗰𝗼𝗻𝘀𝘁𝗮𝗻𝘁 𝗵𝗮𝘀𝗵𝗖𝗼𝗱𝗲 is a perfectly legitimate choice for an entity, because it keeps the contract correct across the whole null-id to assigned-id transition and you only trade away some hash bucket spread
+
+• never put @𝗗𝗮𝘁𝗮 on an entity, since it also drags 𝘁𝗼𝗦𝘁𝗿𝗶𝗻𝗴() across every field and every lazy relation you own
+
+• keep any generated equality far away from associations that Hibernate loads lazily
+
+The deeper lesson is that a JPA entity has an identity which changes the exact moment it crosses into the database, while the default Java equality contract quietly assumes identity never moves at all. Those two assumptions sit in direct conflict, and Lombok hides that conflict behind one extremely convenient annotation that looks completely harmless in the diff.
+
+How do you write equals and hashCode for your entities, a natural business key, a pre-assigned UUID, or just a constant? Curious what actually survived real persistence in your codebase 👇
+
+#Java #Hibernate #JPA #Lombok #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper
