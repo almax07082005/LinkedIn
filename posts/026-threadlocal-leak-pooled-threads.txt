@@ -1,0 +1,19 @@
+𝗢𝗻𝗲 𝘂𝘀𝗲𝗿 𝗹𝗼𝗮𝗱𝗲𝗱 𝘁𝗵𝗲𝗶𝗿 𝗮𝗰𝗰𝗼𝘂𝗻𝘁 𝗮𝗻𝗱 𝘀𝗮𝘄 𝘀𝗼𝗺𝗲𝗼𝗻𝗲 𝗲𝗹𝘀𝗲'𝘀 𝗯𝗮𝗹𝗮𝗻𝗰𝗲. 𝗧𝗵𝗲 𝗰𝗮𝘂𝘀𝗲 𝘄𝗮𝘀 𝗼𝗻𝗲 𝗳𝗼𝗿𝗴𝗼𝘁𝘁𝗲𝗻 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹. 😬
+
+We used a 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 to carry request context — user id, trace id, locale — down through the call stack without threading it as a parameter into every single method. It reads beautifully, the security context is just "there" wherever you need it, and in dev it behaves perfectly because requests arrive one at a time on fresh threads.
+
+The problem is what a 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 actually binds to. It does not live for the duration of the request — it lives on the thread. And Tomcat does not hand you a new thread per request, it hands you a worker borrowed from a pool and returns it afterwards for the next request to reuse. If you set the value at the start but never clear it at the end, that value stays sitting on the worker, waiting for whoever lands on it next.
+
+Under light load you never see it, because threads are mostly idle and usually get overwritten before anyone notices. Under real concurrency the trap springs. A request hits an early return, an exception unwinds before the context is overwritten, or it touches an endpoint that simply never sets the value — and now it reads whatever the previous occupant of that thread left behind. User B quietly inherits user A's identity, and from the monitoring side nothing looks wrong.
+
+There is a slower flavor of the same bug. Values pinned to pooled threads are never garbage collected, because the thread outlives every request, so a heavy object held in a 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 leaks for the whole lifetime of the pool — the classic creeping 𝗢𝘂𝘁𝗢𝗳𝗠𝗲𝗺𝗼𝗿𝘆𝗘𝗿𝗿𝗼𝗿 that shows up days after a deploy and never in tests.
+
+The fix is boring and absolute: whatever sets the value owns clearing it, and it clears it in a 𝗳𝗶𝗻𝗮𝗹𝗹𝘆. In practice that means a single filter or interceptor that wraps the whole request, populates the context on the way in and calls 𝗿𝗲𝗺𝗼𝘃𝗲() on the way out no matter how the request ends. Never lean on the next request to overwrite it, because the entire bug is that not every path does.
+
+And before anyone says virtual threads kill this — they drop the pooling, so you get a fresh thread per task and the cross-request bleed mostly goes away. But you still call 𝗿𝗲𝗺𝗼𝘃𝗲() on purpose, and 𝗜𝗻𝗵𝗲𝗿𝗶𝘁𝗮𝗯𝗹𝗲𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 can still hand a child thread a copy you never meant to share.
+
+The lesson that stuck: a 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 is request-scoped only in your head — to the JVM it is thread-scoped, and a pooled thread remembers far more than you intended.
+
+How do you propagate request context in your services — 𝗧𝗵𝗿𝗲𝗮𝗱𝗟𝗼𝗰𝗮𝗹 with strict cleanup, explicit parameters, or something framework-managed? Curious what held up under real concurrency 👇
+
+#Java #SpringBoot #Concurrency #Backend #ThreadLocal #SoftwareEngineering #JavaDeveloper #Fintech
