@@ -1,0 +1,23 @@
+𝗪𝗲 𝗮𝗱𝗱𝗲𝗱 𝗼𝗻𝗲 𝗻𝗲𝘄 𝘃𝗮𝗹𝘂𝗲 𝘁𝗼 𝗮𝗻 𝗲𝗻𝘂𝗺, 𝘀𝗵𝗶𝗽𝗽𝗲𝗱 𝗶𝘁 𝗼𝗻 𝗮 𝗙𝗿𝗶𝗱𝗮𝘆, 𝗮𝗻𝗱 𝗯𝘆 𝗠𝗼𝗻𝗱𝗮𝘆 𝗮 𝘀𝗹𝗶𝗰𝗲 𝗼𝗳 𝗿𝗲𝗳𝘂𝗻𝗱𝗲𝗱 𝗽𝗮𝘆𝗺𝗲𝗻𝘁𝘀 𝘄𝗲𝗿𝗲 𝗾𝘂𝗶𝗲𝘁𝗹𝘆 𝗿𝗲𝗮𝗱𝗶𝗻𝗴 𝗯𝗮𝗰𝗸 𝗮𝘀 𝘀𝗲𝘁𝘁𝗹𝗲𝗱. 😬
+
+Nobody went near the payment logic. The diff was three lines — a single new constant dropped into an operation-status enum, placed in the middle of the list where it read most naturally next to its siblings. It sailed through review because it looked like the safest change in the codebase.
+
+The damage was done the second it merged. That enum was persisted with @𝗘𝗻𝘂𝗺𝗲𝗿𝗮𝘁𝗲𝗱(𝗘𝗻𝘂𝗺𝗧𝘆𝗽𝗲.𝗢𝗥𝗗𝗜𝗡𝗔𝗟) — also the JPA default the moment you forget to specify anything — and ORDINAL does not store the name of the constant, it stores its integer position: 0, 1, 2, 3. Insert a new constant in the middle and every position after it shifts by one, so every historical row is now pointing one slot to the left of what the code believes that number means.
+
+The genuinely nasty part is how invisible it stays. Nothing throws, nothing logs a warning — the column is a valid integer and Hibernate maps it back without complaint. New writes look correct, your tests stay green, freshly created operations behave exactly as expected. Only the rows written before the deploy silently change meaning underneath you, and in a payment system "this row now means a different status" is money sitting in the wrong state at reconciliation.
+
+What actually held up for us 👇
+
+• store the meaning, not the position — @𝗘𝗻𝘂𝗺𝗲𝗿𝗮𝘁𝗲𝗱(𝗘𝗻𝘂𝗺𝗧𝘆𝗽𝗲.𝗦𝗧𝗥𝗜𝗡𝗚) keeps the constant name in the column, so reordering becomes harmless and the data stays readable straight from the table
+
+• for anything money-critical, a custom @𝗖𝗼𝗻𝘃𝗲𝗿𝘁𝗲𝗿 (𝗔𝘁𝘁𝗿𝗶𝗯𝘂𝘁𝗲𝗖𝗼𝗻𝘃𝗲𝗿𝘁𝗲𝗿) pins each constant to an explicit stored code that never silently depends on declaration order — you decide the mapping, the compiler does not
+
+• treat a persisted enum that was ever saved as ORDINAL as append-only — new constants go at the very end and nowhere else, because reordering is a data corruption, not a refactor
+
+• switching ORDINAL to STRING is itself a real data migration — you rewrite the existing integer column into names, not just flip the annotation and hope the old rows fix themselves
+
+The deeper lesson I keep relearning: to every Java developer the declaration order of an enum is a harmless detail you reorder without a second thought. The instant ORDINAL persists it, that order quietly becomes a database schema contract nobody wrote down and no review will ever flag — until the numbers stop lining up months later.
+
+How do you persist enums — @𝗘𝗻𝘂𝗺𝗲𝗿𝗮𝘁𝗲𝗱(𝗦𝗧𝗥𝗜𝗡𝗚), a dedicated converter with explicit codes, or a plain lookup table with a foreign key? Curious what has survived a schema change under real volume 👇
+
+#Java #JPA #Hibernate #SpringBoot #Fintech #Backend #SoftwareEngineering #JavaDeveloper
