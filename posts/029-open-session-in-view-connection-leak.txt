@@ -1,0 +1,21 @@
+𝗢𝘂𝗿 𝗱𝗮𝘁𝗮𝗯𝗮𝘀𝗲 𝗰𝗼𝗻𝗻𝗲𝗰𝘁𝗶𝗼𝗻 𝗽𝗼𝗼𝗹 𝗸𝗲𝗽𝘁 𝗱𝗿𝗮𝗶𝗻𝗶𝗻𝗴 𝘂𝗻𝗱𝗲𝗿 𝗹𝗼𝗮𝗱 — 𝗮𝗻𝗱 𝘁𝗵𝗲 𝘀𝗹𝗼𝘄 𝗾𝘂𝗲𝗿𝘆 𝗲𝘃𝗲𝗿𝘆𝗼𝗻𝗲 𝘄𝗮𝘀 𝗵𝘂𝗻𝘁𝗶𝗻𝗴 𝗳𝗼𝗿 𝘀𝗶𝗺𝗽𝗹𝘆 𝗱𝗶𝗱 𝗻𝗼𝘁 𝗲𝘅𝗶𝘀𝘁. 😬
+
+This lived in a payment dashboard service — an ordinary read endpoint that loaded an operation with its merchant and a few related rows and returned them as JSON. In development it was instant. In production, under real traffic, HikariCP started throwing "connection is not available, request timed out", pods looked healthy, CPU was calm, and the SQL — once we traced it — ran in single-digit milliseconds. The queries were fast. The connections just never came back to the pool in time.
+
+The culprit was a Spring Boot default almost nobody turns off: 𝗢𝗽𝗲𝗻 𝗦𝗲𝘀𝘀𝗶𝗼𝗻 𝗜𝗻 𝗩𝗶𝗲𝘄. With 𝘀𝗽𝗿𝗶𝗻𝗴.𝗷𝗽𝗮.𝗼𝗽𝗲𝗻-𝗶𝗻-𝘃𝗶𝗲𝘄=𝘁𝗿𝘂𝗲, Spring binds the Hibernate session, and the JDBC connection behind it, to the thread for the 𝗲𝗻𝘁𝗶𝗿𝗲 lifetime of the request — not just the @Transactional method but everything after it: the controller returning, Jackson serializing, a slow external call before rendering. The query finished in milliseconds, yet the connection stayed pinned through hundreds of milliseconds of unrelated work. Multiply that by real RPS and the pool evaporates while the database sits nearly idle.
+
+It hides so well because OSIV is genuinely trying to help: lazy associations can still load during serialization, which is why you never see a 𝗟𝗮𝘇𝘆𝗜𝗻𝗶𝘁𝗶𝗮𝗹𝗶𝘇𝗮𝘁𝗶𝗼𝗻𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 locally. But that convenience carries two quiet costs — the connection is held far longer than the query needs, and every lazy field touched while serializing fires its own SELECT 𝗼𝘂𝘁𝘀𝗶𝗱𝗲 any transaction, so the classic N+1 quietly moves into the view layer.
+
+What actually held up for us 👇
+
+• turn it off deliberately — 𝘀𝗽𝗿𝗶𝗻𝗴.𝗷𝗽𝗮.𝗼𝗽𝗲𝗻-𝗶𝗻-𝘃𝗶𝗲𝘄=𝗳𝗮𝗹𝘀𝗲 — and accept that a LazyInitializationException now surfaces honestly at dev time instead of hiding as a production pool timeout
+
+• load exactly what the response needs while the transaction is still open, with a fetch join, an @𝗘𝗻𝘁𝗶𝘁𝘆𝗚𝗿𝗮𝗽𝗵, or a DTO projection, so nothing lazy ever escapes the service boundary
+
+• never make an external HTTP call while a DB connection is bound to the thread — finish the DB work, commit, release, and only then talk to the provider; no pool size saves you if every request holds a connection for its whole duration
+
+The deeper lesson I keep relearning: OSIV trades a loud, honest exception at dev time for a silent resource leak in production — so smoothly nobody connects a wave of pool timeouts back to one lazy field three layers away.
+
+How do you handle lazy loading — OSIV off with explicit fetch joins, DTO projections everywhere, or entity graphs per query? Curious what survived real traffic in your stack 👇
+
+#Java #SpringBoot #Hibernate #JPA #Backend #SoftwareEngineering #JavaDeveloper #Performance
