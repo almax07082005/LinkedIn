@@ -1,0 +1,23 @@
+𝗢𝗻𝗲 𝘀𝗹𝗼𝘄 𝗿𝗲𝗽𝗼𝗿𝘁 𝗲𝗻𝗱𝗽𝗼𝗶𝗻𝘁 𝗾𝘂𝗶𝗲𝘁𝗹𝘆 𝗳𝗿𝗼𝘇𝗲 𝗵𝗮𝗹𝗳 𝘁𝗵𝗲 𝘀𝗲𝗿𝘃𝗶𝗰𝗲 — 𝗮𝗻𝗱 𝘁𝗵𝗲 𝗰𝗼𝗱𝗲 𝗯𝗲𝗵𝗶𝗻𝗱 𝗶𝘁 𝗹𝗼𝗼𝗸𝗲𝗱 𝗹𝗶𝗸𝗲 𝘁𝗵𝗲 𝘀𝗮𝗳𝗲𝘀𝘁 𝗹𝗶𝗻𝗲 𝗶𝗻 𝘁𝗵𝗲 𝗳𝗶𝗹𝗲. 😬
+
+This was a payment reporting endpoint that enriched a batch of transactions, calling an internal service for each one to attach merchant details. To speed it up, someone reached for the obvious tool and wrote 𝗹𝗶𝘀𝘁.𝗽𝗮𝗿𝗮𝗹𝗹𝗲𝗹𝗦𝘁𝗿𝗲𝗮𝗺(), mapped that blocking call over every element, and collected the result. It sailed through review, was faster on a laptop, and for months nobody thought about it again.
+
+Then during a traffic spike we started getting alerts from endpoints that had nothing to do with reporting. A completely unrelated feature that fanned out a few 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗯𝗹𝗲𝗙𝘂𝘁𝘂𝗿𝗲 calls slowed to a crawl, and nothing in its code had changed. The thing they secretly shared was a thread pool nobody on either team had ever named.
+
+Here is the trap. 𝗽𝗮𝗿𝗮𝗹𝗹𝗲𝗹𝗦𝘁𝗿𝗲𝗮𝗺() does not get its own threads. It runs on the 𝗙𝗼𝗿𝗸𝗝𝗼𝗶𝗻𝗣𝗼𝗼𝗹.𝗰𝗼𝗺𝗺𝗼𝗻𝗣𝗼𝗼𝗹 — a single pool shared by the entire JVM, sized by default to available processors minus one. And that is the very same pool 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗯𝗹𝗲𝗙𝘂𝘁𝘂𝗿𝗲.𝘀𝘂𝗽𝗽𝗹𝘆𝗔𝘀𝘆𝗻𝗰 uses when you forget to pass an explicit executor. The moment you put 𝗯𝗹𝗼𝗰𝗸𝗶𝗻𝗴 𝗜𝗢 — a provider call, a slow query — inside a parallel stream, those few precious carrier threads park on network waits, and every other parallel operation anywhere in the process quietly queues behind them.
+
+That is what makes it so nasty. The blast radius is not your endpoint, it is the whole application: one team's parallel stream doing blocking work degrades a second team's unrelated feature, with no error and no obvious owner to blame.
+
+What actually held up for us 👇
+
+• never run 𝗯𝗹𝗼𝗰𝗸𝗶𝗻𝗴 𝗜𝗢 inside 𝗽𝗮𝗿𝗮𝗹𝗹𝗲𝗹𝗦𝘁𝗿𝗲𝗮𝗺() — it exists for CPU-bound work over in-memory data, not network calls
+
+• for async IO, use 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗯𝗹𝗲𝗙𝘂𝘁𝘂𝗿𝗲 with your own 𝗯𝗼𝘂𝗻𝗱𝗲𝗱, 𝗻𝗮𝗺𝗲𝗱 𝗲𝘅𝗲𝗰𝘂𝘁𝗼𝗿, isolated per concern so one slow dependency can't starve everything else
+
+• name your pools, because a thread dump full of pool-3-thread-7 tells you nothing at 3am
+
+The deeper lesson I keep relearning: 𝗽𝗮𝗿𝗮𝗹𝗹𝗲𝗹𝗦𝘁𝗿𝗲𝗮𝗺() looks like a free "make it faster" switch, but the parallelism it taps is a single shared, JVM-wide resource sized for CPU work. The instant blocking calls land on it, "parallel" quietly becomes "serialized behind whoever blocks first" — and the one paying the bill is often some other team that never wrote a single parallel stream.
+
+How do you run parallel work in your services — 𝗽𝗮𝗿𝗮𝗹𝗹𝗲𝗹𝗦𝘁𝗿𝗲𝗮𝗺 for CPU-bound only, dedicated executors per concern, or virtual threads? Curious what held up under real load 👇
+
+#Java #Concurrency #ForkJoinPool #SpringBoot #Backend #Performance #SoftwareEngineering #JavaDeveloper
