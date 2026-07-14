@@ -1,0 +1,25 @@
+𝗔 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝗮𝗱𝗱𝗲𝗱 𝗼𝗻𝗲 𝗳𝗶𝗲𝗹𝗱 𝘁𝗼 𝘁𝗵𝗲𝗶𝗿 𝘄𝗲𝗯𝗵𝗼𝗼𝗸, 𝗰𝗵𝗮𝗻𝗴𝗲𝗱 𝗻𝗼𝘁𝗵𝗶𝗻𝗴 𝗲𝗹𝘀𝗲 — 𝗮𝗻𝗱 𝗼𝘂𝗿 𝗰𝗮𝗹𝗹𝗯𝗮𝗰𝗸 𝗵𝗮𝗻𝗱𝗹𝗲𝗿 𝘀𝘁𝗮𝗿𝘁𝗲𝗱 𝗿𝗲𝗷𝗲𝗰𝘁𝗶𝗻𝗴 𝗲𝘃𝗲𝗿𝘆 𝘀𝗶𝗻𝗴𝗹𝗲 𝗲𝘃𝗲𝗻𝘁. 😬
+
+No deploy on our side, no config change — yet every incoming webhook suddenly failed deserialization. The provider had added one field we did not even use, and Jackson refused to parse the payload.
+
+Trap one, on by default: 𝗙𝗔𝗜𝗟_𝗢𝗡_𝗨𝗡𝗞𝗡𝗢𝗪𝗡_𝗣𝗥𝗢𝗣𝗘𝗥𝗧𝗜𝗘𝗦. The moment a contract you do not own grows a field your DTO has never seen, deserialization throws instead of ignoring it. That strictness is fine internally, but at a boundary you do not own it turns every additive change on their side into an incident on yours. External payloads must be read leniently.
+
+Trap two is quieter, and scarier, because it never throws. Providers love introducing new status values, and the day they send one your enum has never seen, Jackson throws — so people reach for 𝗥𝗘𝗔𝗗_𝗨𝗡𝗞𝗡𝗢𝗪𝗡_𝗘𝗡𝗨𝗠_𝗩𝗔𝗟𝗨𝗘𝗦_𝗔𝗦_𝗡𝗨𝗟𝗟, which silently turns that status into 𝗻𝘂𝗹𝗹. Now a real payment carries a null status into your logic, your switch falls through, and a declined transaction is silently accepted. Far safer is an explicit @𝗝𝘀𝗼𝗻𝗘𝗻𝘂𝗺𝗗𝗲𝗳𝗮𝘂𝗹𝘁𝗩𝗮𝗹𝘂𝗲 mapped to 𝗨𝗡𝗞𝗡𝗢𝗪𝗡 that your code must handle on purpose.
+
+Trap three hides inside numbers that look completely fine. When Jackson meets a JSON number like 𝟭𝟬.𝟭𝟬 and the target is a loosely typed field or 𝗢𝗯𝗷𝗲𝗰𝘁, it reads it as a 𝗱𝗼𝘂𝗯𝗹𝗲 — and you know where that ends for money, picking up binary floating point error before your code ever touches it. 𝗨𝗦𝗘_𝗕𝗜𝗚_𝗗𝗘𝗖𝗜𝗠𝗔𝗟_𝗙𝗢𝗥_𝗙𝗟𝗢𝗔𝗧𝗦 materializes floating point JSON straight into 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹, so amounts arrive exact instead of pre-corrupted the moment they cross the parser.
+
+What actually held up for us 👇
+
+• two mapper profiles — strict for our internal contracts, lenient for anything we do not control
+
+• big-decimal-for-floats on everywhere money can appear, so precision loss never sneaks in at the edge
+
+• an explicit unknown-enum default the code must handle, never a silent null standing in for a real state
+
+• a contract test deserializing a payload with an extra unknown field, so "the provider added something" is caught in CI, not at 3am
+
+The deeper lesson I keep relearning: deserialization is not plumbing, it is the boundary where a system you do not own reaches into yours. Its defaults decide what happens when the outside world changes shape — and if you never make that call on purpose, you have let an external team decide when your service breaks.
+
+How do you handle external payloads — strict DTOs with versioning, lenient mapping with defaults, or a full anti-corruption layer? Curious what has survived a provider changing things under you 👇
+
+#Java #Jackson #SpringBoot #Backend #Fintech #API #SoftwareEngineering #JavaDeveloper
