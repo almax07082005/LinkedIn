@@ -1,0 +1,23 @@
+𝗪𝗲 𝗻𝗲𝘃𝗲𝗿 𝗰𝗮𝗹𝗹𝗲𝗱 𝘀𝗮𝘃𝗲(). 𝗧𝗵𝗲 𝗿𝗼𝘄 𝗶𝗻 𝘁𝗵𝗲 𝗱𝗮𝘁𝗮𝗯𝗮𝘀𝗲 𝗰𝗵𝗮𝗻𝗴𝗲𝗱 𝗮𝗻𝘆𝘄𝗮𝘆. 😬
+
+This one hid in a payment service, in the least suspicious place imaginable — a read path. We loaded an operation entity to make a routing decision, and somewhere in that method someone adjusted one field in memory, purely to reuse the object for a local calculation before returning a response. No repository call, no save(), nothing that looks like a write anywhere in the diff. Then the transaction committed, and that "temporary" change was quietly sitting in the database.
+
+The mechanism is Hibernate doing exactly what it promises. The moment you load an entity inside a transaction it becomes 𝗺𝗮𝗻𝗮𝗴𝗲𝗱 — the persistence context keeps a snapshot of how it looked when it was read. At flush time Hibernate walks every managed entity, compares it against that snapshot, and fires an UPDATE for anything that drifted. This is 𝗮𝘂𝘁𝗼𝗺𝗮𝘁𝗶𝗰 𝗱𝗶𝗿𝘁𝘆 𝗰𝗵𝗲𝗰𝗸𝗶𝗻𝗴, and it means a plain setter on a loaded entity 𝗶𝘀 a pending write. You never call save() for a managed entity — save() is only for new or detached ones. Mutating the object is the update.
+
+What makes it genuinely nasty is the timing. Flush does not only happen at commit. With the default 𝗙𝗹𝘂𝘀𝗵𝗠𝗼𝗱𝗲.𝗔𝗨𝗧𝗢, Hibernate also flushes before running a JPQL query in the same transaction, so your "throwaway" mutation can hit the database in the middle of the flow — and even change the result of the very next query. Nothing throws, nothing logs, and in a fintech system a silently mutated status or amount is money quietly landing in the wrong state at reconciliation.
+
+What actually held up for us 👇
+
+• mark every read path 𝗿𝗲𝗮𝗱𝗢𝗻𝗹𝘆 — @𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹(𝗿𝗲𝗮𝗱𝗢𝗻𝗹𝘆 = 𝘁𝗿𝘂𝗲) flips Hibernate to a manual flush mode, so an accidental mutation is never written back, and it signals intent to whoever reads the code next
+
+• never mutate a managed entity to shape a response — map into a DTO and change the DTO, because the entity is live wiring into the database, not a convenient struct
+
+• if you genuinely need a scratch copy, make a 𝗿𝗲𝗮𝗹 one — a new object or a mapper output, never the managed instance you just loaded
+
+• remember auto-flush fires before queries too, so "I'll undo it before commit" is not a plan you can actually rely on
+
+The deeper lesson I keep relearning: a loaded JPA entity is not a value object, it is a live handle on a row. Inside an open transaction every setter you call is a database write you never spelled out — and the review will never see a save() to warn anyone it is coming.
+
+How do you guard your read paths — 𝗿𝗲𝗮𝗱𝗢𝗻𝗹𝘆 transactions everywhere, DTO projections, or detaching entities before you touch them? Curious what has held up under real traffic 👇
+
+#Java #Hibernate #JPA #SpringBoot #Backend #Fintech #SoftwareEngineering #JavaDeveloper
