@@ -1,0 +1,25 @@
+𝗢𝘂𝗿 𝗽𝗼𝗱 𝗸𝗲𝗽𝘁 𝗱𝘆𝗶𝗻𝗴 𝘄𝗶𝘁𝗵 𝗲𝘅𝗶𝘁 𝗰𝗼𝗱𝗲 𝟭𝟯𝟳 — 𝗻𝗼 𝗢𝘂𝘁𝗢𝗳𝗠𝗲𝗺𝗼𝗿𝘆𝗘𝗿𝗿𝗼𝗿, 𝗻𝗼 𝗵𝗲𝗮𝗽 𝗱𝘂𝗺𝗽, 𝗷𝘂𝘀𝘁 𝗮 𝗿𝗲𝘀𝘁𝗮𝗿𝘁 𝗲𝘃𝗲𝗿𝘆 𝗳𝗲𝘄 𝗵𝗼𝘂𝗿𝘀. 😬
+
+This lived in a Spring Boot payment service on Kubernetes with a 768Mi memory limit. Under load the pods kept getting recycled, yet the logs were clean — no OutOfMemoryError, no stack trace, nothing pointing at our code. We went hunting for a heap dump and there wasn't one, because the JVM never threw anything. The Linux kernel had killed the process from underneath it, and 𝗲𝘅𝗶𝘁 𝟭𝟯𝟳 is just 128 + 9 — a 𝗦𝗜𝗚𝗞𝗜𝗟𝗟 from the cgroup OOM killer, not a JVM failure.
+
+The mechanism was almost embarrassing. The JVM was sizing its max heap from the node's total memory, not the container's limit. On an older runtime the default max heap is about a quarter of the RAM the process thinks it can see, and a container without cgroup awareness sees the whole host. So on a 64GB node the JVM assumed it could grow the heap into gigabytes, while the real limit sat at 768Mi. The heap expanded as designed, resident memory crossed the limit, and the kernel killed the container instantly — no Java exception, because from the JVM's point of view it was still inside 𝗶𝘁𝘀 heap.
+
+Even with container awareness on, the heap is only one slice of what the kernel counts. Metaspace, thread stacks, the JIT code cache, direct ByteBuffers and Netty's off-heap pools all live outside -𝗫𝗺𝘅 — set the heap to 75% and forget the rest, and you get killed again.
+
+What actually held up for us 👇
+
+• turn on container awareness on purpose — modern JDKs honor cgroup limits via 𝗨𝘀𝗲𝗖𝗼𝗻𝘁𝗮𝗶𝗻𝗲𝗿𝗦𝘂𝗽𝗽𝗼𝗿𝘁 by default, but verify it is really active, don't trust the base image
+
+• size the heap with 𝗠𝗮𝘅𝗥𝗔𝗠𝗣𝗲𝗿𝗰𝗲𝗻𝘁𝗮𝗴𝗲, not a hardcoded -Xmx, so the same image behaves correctly whatever limit the pod receives
+
+• leave real headroom for off-heap — metaspace, thread stacks, direct buffers, GC — 75% heap is aggressive for heavy IO and Netty work
+
+• watch the container's 𝗥𝗦𝗦 and working set, not only heap-used — a healthy heap graph next to a climbing RSS is exactly the trap
+
+• remember 𝟭𝟯𝟳 means the kernel killed you, not the JVM — stop searching the logs for an OutOfMemoryError that will never appear
+
+The lesson I keep relearning: -Xmx is a promise about the heap, not about the whole process. The kernel only counts resident memory and doesn't care how you divide it. A JVM tuned as though it owns the whole machine, dropped into a container that owns a slice of it, loses that argument every time — quietly, handing you a number where you expected a stack trace.
+
+How do you size JVM memory in Kubernetes — 𝗠𝗮𝘅𝗥𝗔𝗠𝗣𝗲𝗿𝗰𝗲𝗻𝘁𝗮𝗴𝗲, an explicit -Xmx with a measured off-heap budget, or vertical pod autoscaling? Curious what finally stopped the 137s in your stack 👇
+
+#Java #JVM #Kubernetes #SpringBoot #Backend #DevOps #SoftwareEngineering #JavaDeveloper
