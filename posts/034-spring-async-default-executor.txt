@@ -1,0 +1,23 @@
+𝗪𝗲 𝗺𝗮𝗱𝗲 𝗼𝗻𝗲 𝗺𝗲𝘁𝗵𝗼𝗱 @𝗔𝘀𝘆𝗻𝗰 𝘁𝗼 𝗺𝗮𝗸𝗲 𝗶𝘁 𝗻𝗼𝗻-𝗯𝗹𝗼𝗰𝗸𝗶𝗻𝗴. 𝗨𝗻𝗱𝗲𝗿 𝗹𝗼𝗮𝗱 𝘁𝗵𝗲 𝘀𝗲𝗿𝘃𝗶𝗰𝗲 𝘀𝗽𝗮𝘄𝗻𝗲𝗱 𝘁𝗵𝗼𝘂𝘀𝗮𝗻𝗱𝘀 𝗼𝗳 𝘁𝗵𝗿𝗲𝗮𝗱𝘀 𝗮𝗻𝗱 𝗳𝗲𝗹𝗹 𝗼𝘃𝗲𝗿, 𝗮𝗻𝗱 𝗻𝗼𝘁 𝗮 𝘀𝗶𝗻𝗴𝗹𝗲 𝗲𝗿𝗿𝗼𝗿 𝘄𝗮𝘀 𝗲𝘃𝗲𝗿 𝗹𝗼𝗴𝗴𝗲𝗱. 😬
+
+This was a webhook-and-notification fan-out in a payment service. Firing provider callbacks and emails synchronously inside the request added latency for no reason, so someone annotated the method @𝗔𝘀𝘆𝗻𝗰 and the request returned instantly. It sailed through review, because @𝗔𝘀𝘆𝗻𝗰 is the textbook "just make it non-blocking" switch everyone reaches for first.
+
+Then a traffic spike arrived and the pod simply died. Thread count on the dashboard had climbed into the thousands, resident memory followed it, and the kernel recycled the container. Nobody had touched the business logic. The default executor behind that one annotation did the damage.
+
+Here is the first trap. Turn on @𝗔𝘀𝘆𝗻𝗰 without declaring your own executor and Spring quietly falls back to 𝗦𝗶𝗺𝗽𝗹𝗲𝗔𝘀𝘆𝗻𝗰𝗧𝗮𝘀𝗸𝗘𝘅𝗲𝗰𝘂𝘁𝗼𝗿, which despite the name is not a pool at all. It spins up a brand new thread for every call and never reuses one. At low volume you notice nothing. The instant real concurrency arrives, every async call is another OS thread with no bound, and thread creation outruns the work until the process runs out of memory.
+
+The second trap is quieter, because it never throws where you are looking. An @𝗔𝘀𝘆𝗻𝗰 method returning 𝘃𝗼𝗶𝗱 runs on another thread, so any exception it throws has nowhere to propagate. It does not fail the request, it just evaporates. A failed webhook or a failed ledger write disappears with no stack trace anywhere.
+
+What actually held up for us 👇
+
+• define an explicit 𝗧𝗵𝗿𝗲𝗮𝗱𝗣𝗼𝗼𝗹𝗧𝗮𝘀𝗸𝗘𝘅𝗲𝗰𝘂𝘁𝗼𝗿 with a bounded pool, a bounded queue and a real rejection policy, so overload becomes visible instead of an unbounded stampede
+
+• return a 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗯𝗹𝗲𝗙𝘂𝘁𝘂𝗿𝗲 instead of 𝘃𝗼𝗶𝗱 when you care about the outcome, so failures surface through the future instead of vanishing on a foreign thread
+
+• for genuine fire-and-forget work, register an 𝗔𝘀𝘆𝗻𝗰𝗨𝗻𝗰𝗮𝘂𝗴𝗵𝘁𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻𝗛𝗮𝗻𝗱𝗹𝗲𝗿 so a failure is at least logged, never silently swallowed
+
+The deeper lesson I keep relearning: @𝗔𝘀𝘆𝗻𝗰 looks like one annotation that makes a method non-blocking, but it hands two large decisions to a default, which threads run your work and where its failures go to die. Leave both to 𝗦𝗶𝗺𝗽𝗹𝗲𝗔𝘀𝘆𝗻𝗰𝗧𝗮𝘀𝗸𝗘𝘅𝗲𝗰𝘂𝘁𝗼𝗿 and you have signed up for unbounded threads and invisible errors, and neither shows up until real production load.
+
+How do you run background work in your services, @𝗔𝘀𝘆𝗻𝗰 with a tuned executor, a dedicated worker queue, or Kafka events? Curious what held up once the load got real 👇
+
+#Java #SpringBoot #Concurrency #Async #Backend #Performance #SoftwareEngineering #JavaDeveloper
