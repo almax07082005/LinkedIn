@@ -1,0 +1,23 @@
+𝗪𝗲 𝗳𝗹𝗶𝗽𝗽𝗲𝗱 𝘁𝗵𝗲 𝗸𝗶𝗹𝗹 𝘀𝘄𝗶𝘁𝗰𝗵 𝘁𝗼 𝘀𝘁𝗼𝗽 𝗽𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝗮 𝗯𝗮𝗱 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿. 𝗧𝗵𝗲 𝘄𝗼𝗿𝗸𝗲𝗿 𝘁𝗵𝗿𝗲𝗮𝗱𝘀 𝗸𝗲𝗽𝘁 𝗽𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝗮𝗻𝘆𝘄𝗮𝘆. 😬
+
+This lived in a payment service running a pool of background workers draining operations from a queue. We had an ops kill switch — a plain boolean field on a component — so that when a provider misbehaved we could set it to true and the loops would finish their current item and stop. In every test it worked instantly. In production, during an actual incident, we flipped it and watched the workers keep hammering the broken provider as if nothing had changed.
+
+The flag was true. We logged it, read it back over an admin endpoint, unmistakably true. And the worker loop, checking that same field on every iteration, kept reading false. Two threads, one field, two different realities, and no exception anywhere to tell us which one was lying.
+
+The cause was the 𝗝𝗮𝘃𝗮 𝗠𝗲𝗺𝗼𝗿𝘆 𝗠𝗼𝗱𝗲𝗹 doing what it is allowed to do. Without 𝘃𝗼𝗹𝗮𝘁𝗶𝗹𝗲, a write on one thread has no 𝗵𝗮𝗽𝗽𝗲𝗻𝘀-𝗯𝗲𝗳𝗼𝗿𝗲 relationship with a read on another, so the JVM is under no obligation to ever make that write visible across threads. It is not a bug, it is the contract. The JIT, seeing a hot loop that never touches the flag itself, hoisted that read out of the loop into a register — so the worker kept checking a cached copy from minutes ago, effectively forever. And it hides beautifully, because it only bites under the long-running, hot, uncontended loop that is a production worker, never on the short-lived threads of a test.
+
+What actually held up for us 👇
+
+• make the flag 𝘃𝗼𝗹𝗮𝘁𝗶𝗹𝗲 — it forces the write to main memory and the read back from it every time, the cross-thread visibility a plain field never promised
+
+• for anything read-modify-write, 𝘃𝗼𝗹𝗮𝘁𝗶𝗹𝗲 is not enough — reach for 𝗔𝘁𝗼𝗺𝗶𝗰𝗕𝗼𝗼𝗹𝗲𝗮𝗻 or 𝗔𝘁𝗼𝗺𝗶𝗰𝗟𝗼𝗻𝗴, since a check-then-act on a volatile is still two steps a second thread can slip between
+
+• lean on tools that already give you happens-before — 𝘀𝘆𝗻𝗰𝗵𝗿𝗼𝗻𝗶𝘇𝗲𝗱 and everything under 𝗷𝗮𝘃𝗮.𝘂𝘁𝗶𝗹.𝗰𝗼𝗻𝗰𝘂𝗿𝗿𝗲𝗻𝘁 give it to you for free
+
+• treat any state shared between threads as a concurrency decision made on purpose, not a field you happened to declare
+
+The deeper lesson I keep relearning: correctness across threads is not about the value you assign, it is about whether the other thread is guaranteed to 𝘀𝗲𝗲 it. The moment a second thread reads that field, "I set it to true" and "you are guaranteed to observe true" become two different claims — and the language only hands you the second one when you ask for it out loud.
+
+How do you handle shared flags between threads — 𝘃𝗼𝗹𝗮𝘁𝗶𝗹𝗲, the 𝗔𝘁𝗼𝗺𝗶𝗰 types, or full synchronization? Curious what has held up under real concurrency in your stack 👇
+
+#Java #Concurrency #JavaMemoryModel #Multithreading #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper
