@@ -1,0 +1,21 @@
+𝗢𝘂𝗿 𝘀𝗼𝗿𝘁 𝗿𝗮𝗻 𝗳𝗶𝗻𝗲 𝗳𝗼𝗿 𝗺𝗼𝗻𝘁𝗵𝘀, 𝘁𝗵𝗲𝗻 𝗼𝗻𝗲 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝗯𝗮𝘁𝗰𝗵 𝗸𝗶𝗹𝗹𝗲𝗱 𝘁𝗵𝗲 𝗷𝗼𝗯: "𝗖𝗼𝗺𝗽𝗮𝗿𝗶𝘀𝗼𝗻 𝗺𝗲𝘁𝗵𝗼𝗱 𝘃𝗶𝗼𝗹𝗮𝘁𝗲𝘀 𝗶𝘁𝘀 𝗴𝗲𝗻𝗲𝗿𝗮𝗹 𝗰𝗼𝗻𝘁𝗿𝗮𝗰𝘁!" 😬
+
+This lived in a payment service, in a step that ordered pending operations by a computed priority. The comparator was three lines from years ago — subtract one score from the other and return it. It passed review and every test, and sorted correctly on everything fed to it. Then a provider sent a settlement batch with a wide spread of values, and the job fell over with 𝗜𝗹𝗹𝗲𝗴𝗮𝗹𝗔𝗿𝗴𝘂𝗺𝗲𝗻𝘁𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 thrown from deep inside the JDK.
+
+The comparator looked innocent: 𝗮.𝗴𝗲𝘁𝗦𝗰𝗼𝗿𝗲() - 𝗯.𝗴𝗲𝘁𝗦𝗰𝗼𝗿𝗲(). For small positives it returns the right sign, which is why nobody looked twice. But subtracting two 𝗶𝗻𝘁 values overflows the instant the gap crosses 𝗜𝗻𝘁𝗲𝗴𝗲𝗿.𝗠𝗔𝗫_𝗩𝗔𝗟𝗨𝗘 — a large positive minus a large negative wraps into a negative, so it now insists the bigger value is smaller. The ordering stops being consistent, only for the pairs that overflow — exactly how it hid for months.
+
+What surprised the team: 𝗟𝗶𝘀𝘁.𝘀𝗼𝗿𝘁() and 𝗖𝗼𝗹𝗹𝗲𝗰𝘁𝗶𝗼𝗻𝘀.𝘀𝗼𝗿𝘁() run 𝗧𝗶𝗺𝗦𝗼𝗿𝘁, which assumes your comparator defines a total order — if a<b and b<c then a<c, every time. When it merges runs and hits a pair that contradicts what it was already told, it does not hand you a scrambled list, it fails fast and throws. And it is data-dependent: TimSort only reaches that check on a large enough list, so a broken comparator passes a five-row test and detonates on ten thousand rows months later. Nobody changed the code — the data finally hit the pair that exposed it. That fail-fast is a gift: the old merge sort would have quietly returned a mis-ordered batch of payments.
+
+What actually held up for us 👇
+
+• never subtract to compare — build with 𝗖𝗼𝗺𝗽𝗮𝗿𝗮𝘁𝗼𝗿.𝗰𝗼𝗺𝗽𝗮𝗿𝗶𝗻𝗴𝗜𝗻𝘁 and 𝘁𝗵𝗲𝗻𝗖𝗼𝗺𝗽𝗮𝗿𝗶𝗻𝗴, or use 𝗜𝗻𝘁𝗲𝗴𝗲𝗿.𝗰𝗼𝗺𝗽𝗮𝗿𝗲 and 𝗟𝗼𝗻𝗴.𝗰𝗼𝗺𝗽𝗮𝗿𝗲, which cannot overflow
+
+• handle nulls on purpose with 𝗻𝘂𝗹𝗹𝘀𝗙𝗶𝗿𝘀𝘁 or 𝗻𝘂𝗹𝗹𝘀𝗟𝗮𝘀𝘁, not an ad-hoc branch that breaks symmetry
+
+• keep it consistent — if two items tie, 𝗰𝗼𝗺𝗽𝗮𝗿𝗲(𝗮,𝗯) and 𝗰𝗼𝗺𝗽𝗮𝗿𝗲(𝗯,𝗮) must both return 0, and mixed criteria must be chained, not early-returned
+
+The deeper lesson I keep relearning: a comparator is not "return any number with a right-ish sign", it is a promise of a total order — and 𝗧𝗶𝗺𝗦𝗼𝗿𝘁 is the one thing that actually checks you kept it. The exception is not the bug; it is the sort refusing to hand you a wrongly ordered list of money.
+
+How do you write comparators — 𝗖𝗼𝗺𝗽𝗮𝗿𝗮𝘁𝗼𝗿.𝗰𝗼𝗺𝗽𝗮𝗿𝗶𝗻𝗴 chains, one canonical ordering per type, or 𝗜𝗻𝘁𝗲𝗴𝗲𝗿.𝗰𝗼𝗺𝗽𝗮𝗿𝗲 by hand? Curious what has survived a weird data distribution in your stack 👇
+
+#Java #Comparator #TimSort #Sorting #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper
