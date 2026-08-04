@@ -1,0 +1,23 @@
+𝗢𝘂𝗿 𝗱𝘂𝗽𝗹𝗶𝗰𝗮𝘁𝗲 𝗰𝗵𝗲𝗰𝗸 𝗽𝗮𝘀𝘀𝗲𝗱 𝗲𝘃𝗲𝗿𝘆 𝘁𝗲𝘀𝘁 𝗳𝗼𝗿 𝗺𝗼𝗻𝘁𝗵𝘀. 𝗧𝗵𝗲𝗻 𝗼𝘂𝗿 𝗼𝗽𝗲𝗿𝗮𝘁𝗶𝗼𝗻 𝗜𝗗𝘀 𝗰𝗿𝗼𝘀𝘀𝗲𝗱 𝟭𝟮𝟳, 𝗮𝗻𝗱 𝘁𝗵𝗲 𝘀𝗲𝗿𝘃𝗶𝗰𝗲 𝗾𝘂𝗶𝗲𝘁𝗹𝘆 𝘀𝘁𝗮𝗿𝘁𝗲𝗱 𝗽𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝘁𝘄𝗶𝗰𝗲. 😬
+
+This lived in a payment service, inside a guard that decided whether an operation had already been handled before we executed it. The IDs came back from the database as boxed 𝗟𝗼𝗻𝗴, and somewhere in that check two of them were compared with ==. It read perfectly — two ids, are they the same one — sailed through review, and behaved right on every test, because our fixtures always used small, tidy ids.
+
+The trap is that == on boxed types compares object references, not values. The JVM keeps an 𝗜𝗻𝘁𝗲𝗴𝗲𝗿 and 𝗟𝗼𝗻𝗴 cache for the range minus 128 to 127, so autoboxing a small number hands you the very same cached object every time, and == accidentally returns true — the right answer for the wrong reason. The instant a value climbs past 127, autoboxing allocates a fresh object, two 𝗟𝗼𝗻𝗴 references holding an identical number now point at different addresses, and == flips to false while the numbers are plainly equal.
+
+That is exactly why it hides so well. Every test and every local run used ids small enough to live inside that cache, so == behaved indistinguishably from 𝗲𝗾𝘂𝗮𝗹𝘀() and nobody noticed. Only real production volume marches the id sequence past 127, and from that row onward the guard silently stops matching — no exception, no log line, just the same operation slipping through a second time and a user charged again.
+
+What actually held up for us 👇
+
+• compare boxed values with 𝗲𝗾𝘂𝗮𝗹𝘀() or 𝗢𝗯𝗷𝗲𝗰𝘁𝘀.𝗲𝗾𝘂𝗮𝗹𝘀(𝗮, 𝗯), and reserve == for primitives, where it genuinely compares the value
+
+• unbox on purpose the moment you mean a value comparison — a 𝗹𝗼𝗻𝗴 == 𝗹𝗼𝗻𝗴 is fine, a 𝗟𝗼𝗻𝗴 == 𝗟𝗼𝗻𝗴 is a reference trap wearing the exact same operator
+
+• never lean on the minus 128 to 127 cache — it is a memory optimization, not a correctness feature, and it is exactly what makes this bug invisible in tests
+
+• watch the mirror-image NPE too — unboxing a 𝗻𝘂𝗹𝗹 𝗟𝗼𝗻𝗴 inside what looks like plain == arithmetic throws 𝗡𝘂𝗹𝗹𝗣𝗼𝗶𝗻𝘁𝗲𝗿𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 from a line nobody reads as risky
+
+The deeper lesson I keep relearning: == asks "is this the same object", 𝗲𝗾𝘂𝗮𝗹𝘀() asks "does this mean the same value", and autoboxing blurs the two just enough that the wrong one looks correct on small data. In a payment system the gap between "same reference" and "same amount" is a duplicate charge waiting for the id counter to grow up.
+
+How do you guard against boxed-equality bugs — 𝗲𝗾𝘂𝗮𝗹𝘀() everywhere, primitives at the boundary, or static analysis that flags == on wrappers? Curious what has caught this before it reached production 👇
+
+#Java #Autoboxing #SpringBoot #Fintech #Backend #JVM #SoftwareEngineering #JavaDeveloper
