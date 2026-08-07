@@ -1,0 +1,27 @@
+𝗘𝘃𝗲𝗿𝘆 𝗿𝗼𝗹𝗹𝗶𝗻𝗴 𝗱𝗲𝗽𝗹𝗼𝘆 𝗹𝗲𝗳𝘁 𝗮 𝗳𝗲𝘄 𝗽𝗮𝘆𝗺𝗲𝗻𝘁𝘀 𝘀𝘁𝗿𝗮𝗻𝗱𝗲𝗱 𝗺𝗶𝗱-𝗳𝗹𝗶𝗴𝗵𝘁, 𝗮𝗻𝗱 𝗶𝘁 𝘁𝗼𝗼𝗸 𝗺𝗼𝗻𝘁𝗵𝘀 𝘁𝗼 𝗯𝗹𝗮𝗺𝗲 𝘁𝗵𝗲 𝗱𝗲𝗽𝗹𝗼𝘆. 😬
+
+The logs were clean, so nobody suspected the release. A handful of operations would sit in PENDING_PROCESS until the stuck-state job swept them up hours later. Then someone plotted them against deploy timestamps, and the correlation was perfect.
+
+Kubernetes terminates a pod with SIGTERM, and by default the JVM simply dies: the web server closes, in-flight requests are cut mid-response, and whatever sat between two database writes never finishes. Spring Boot ships 𝘀𝗲𝗿𝘃𝗲𝗿.𝘀𝗵𝘂𝘁𝗱𝗼𝘄𝗻=𝗴𝗿𝗮𝗰𝗲𝗳𝘂𝗹 for exactly this, and it is off by default. Flipping it on felt like the fix.
+
+It wasn't. The second problem is a race nobody writes down: removing the pod from the Service endpoints and sending it SIGTERM happen at roughly the same moment, and nothing orders them. So for a second or two after the app stops accepting connections, kube-proxy and the ingress keep routing fresh requests at it, and graceful shutdown makes the pod refuse them politely — which the caller still experiences as a failed payment.
+
+The third one lived in our own code. Graceful shutdown covers the web server, not your background workers. Our processing loop caught 𝗜𝗻𝘁𝗲𝗿𝗿𝘂𝗽𝘁𝗲𝗱𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻, logged it and carried on — the most common way to break shutdown in Java. The flag is cleared the instant that exception is thrown, so swallowing it destroys the only signal that thread ever gets, and the loop kept pulling operations while the JVM tried to die. Thirty seconds later the kernel sent SIGKILL, and whatever it had half-written stayed half-written.
+
+What actually held up for us 👇
+
+• size the shutdown timeout against real p99 request duration, keeping it below 𝘁𝗲𝗿𝗺𝗶𝗻𝗮𝘁𝗶𝗼𝗻𝗚𝗿𝗮𝗰𝗲𝗣𝗲𝗿𝗶𝗼𝗱𝗦𝗲𝗰𝗼𝗻𝗱𝘀, or the kernel wins the argument anyway
+
+• add a 𝗽𝗿𝗲𝗦𝘁𝗼𝗽 delay, so endpoint removal propagates before the app stops listening
+
+• never swallow 𝗜𝗻𝘁𝗲𝗿𝗿𝘂𝗽𝘁𝗲𝗱𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻 — rethrow it, or restore the flag with 𝗧𝗵𝗿𝗲𝗮𝗱.𝗰𝘂𝗿𝗿𝗲𝗻𝘁𝗧𝗵𝗿𝗲𝗮𝗱().𝗶𝗻𝘁𝗲𝗿𝗿𝘂𝗽𝘁(), so the loop above you can still learn it was asked to stop
+
+• drain executors too, with a real 𝗮𝘄𝗮𝗶𝘁𝗧𝗲𝗿𝗺𝗶𝗻𝗮𝘁𝗶𝗼𝗻 on every pool, and close Kafka consumers on purpose
+
+• design the work to be resumable anyway, because no grace period saves a pod whose node just disappears
+
+The deeper lesson I keep relearning: an application that starts correctly has done half its job. Shutdown is a code path you own — it runs on every release, and production is where it gets tested first.
+
+How do you drain services on deploy — preStop plus graceful shutdown, readiness-probe draining, or full idempotency and let the pod die whenever? Curious what held up on a busy release day 👇
+
+#Java #SpringBoot #Kubernetes #Backend #DevOps #Fintech #SoftwareEngineering #JavaDeveloper
