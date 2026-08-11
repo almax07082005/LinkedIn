@@ -1,0 +1,23 @@
+𝗪𝗲 𝘀𝗲𝗻𝘁 𝗮 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝘁𝗵𝗲 𝗮𝗺𝗼𝘂𝗻𝘁 𝟭𝟱𝟬𝟬,𝟬𝟬 𝗶𝗻𝘀𝘁𝗲𝗮𝗱 𝗼𝗳 𝟭𝟱𝟬𝟬.𝟬𝟬 — 𝗳𝗿𝗼𝗺 𝗯𝘆𝘁𝗲-𝗳𝗼𝗿-𝗯𝘆𝘁𝗲 𝗶𝗱𝗲𝗻𝘁𝗶𝗰𝗮𝗹 𝗰𝗼𝗱𝗲 𝗿𝘂𝗻𝗻𝗶𝗻𝗴 𝗼𝗻 𝗲𝘃𝗲𝗿𝘆 𝗼𝘁𝗵𝗲𝗿 𝗽𝗼𝗱. 😬
+
+The rollout looked uneventful — same image tag, same config, except the cluster had gained a new node pool. Then a slice of traffic started coming back from the provider as malformed requests. Roughly one payment in five failed, the retry landed on a healthy pod and succeeded, so for a while it read like provider flakiness rather than anything we owned.
+
+The culprit was a formatting call nobody would ever stop on during review: 𝗦𝘁𝗿𝗶𝗻𝗴.𝗳𝗼𝗿𝗺𝗮𝘁("%.𝟮𝗳", 𝗮𝗺𝗼𝘂𝗻𝘁). That overload does not use some neutral built-in formatting — it quietly resolves 𝗟𝗼𝗰𝗮𝗹𝗲.𝗴𝗲𝘁𝗗𝗲𝗳𝗮𝘂𝗹𝘁(), which the JVM derives at startup from the environment it happens to boot inside. Change the base image, inherit a different 𝗟𝗔𝗡𝗚, and the decimal separator underneath your money formatting changes with it. Our code never decided the wire format at all. The host did.
+
+The second trap comes from the same setting and is harder to spot, because it never touches a number. 𝘁𝗼𝗨𝗽𝗽𝗲𝗿𝗖𝗮𝘀𝗲() and 𝘁𝗼𝗟𝗼𝘄𝗲𝗿𝗖𝗮𝘀𝗲() with no argument are locale-sensitive too, and in the Turkish locale "i" does not uppercase to "I" — it becomes "İ", a dotted capital. So the moment you normalize a currency code, a header name or a provider status that way, your case-insensitive comparison against a protocol constant silently stops matching on exactly one locale, and nothing throws.
+
+What actually held up for us 👇
+
+• pass the locale explicitly — 𝗦𝘁𝗿𝗶𝗻𝗴.𝗳𝗼𝗿𝗺𝗮𝘁(𝗟𝗼𝗰𝗮𝗹𝗲.𝗥𝗢𝗢𝗧, …) — because output aimed at a machine is not output aimed at a human, and only one of the two should ever follow a user's locale
+
+• for money crossing a wire, don't format it at all: 𝗕𝗶𝗴𝗗𝗲𝗰𝗶𝗺𝗮𝗹.𝘀𝗲𝘁𝗦𝗰𝗮𝗹𝗲(𝟮, 𝗛𝗔𝗟𝗙_𝗘𝗩𝗘𝗡).𝘁𝗼𝗣𝗹𝗮𝗶𝗻𝗦𝘁𝗿𝗶𝗻𝗴() asks the environment nothing and cannot drift
+
+• 𝘁𝗼𝗨𝗽𝗽𝗲𝗿𝗖𝗮𝘀𝗲(𝗟𝗼𝗰𝗮𝗹𝗲.𝗥𝗢𝗢𝗧) for anything that is an identifier rather than prose, and the same for 𝗗𝗮𝘁𝗲𝗧𝗶𝗺𝗲𝗙𝗼𝗿𝗺𝗮𝘁𝘁𝗲𝗿, whose month and day names come from that very same default
+
+• pinning -𝗗𝘂𝘀𝗲𝗿.𝗹𝗮𝗻𝗴𝘂𝗮𝗴𝗲 in the image is a safety net, never the fix — one dependency calling the no-arg overload still decides your payload for you
+
+The deeper lesson I keep relearning: 𝗟𝗼𝗰𝗮𝗹𝗲.𝗴𝗲𝘁𝗗𝗲𝗳𝗮𝘂𝗹𝘁() is global mutable state you inherit from whoever started the process, and every locale-less overload is a hidden read of it. Those methods are not neutral defaults — they are the easiest way in the language to let an operating system quietly rewrite your protocol.
+
+Have you been bitten by an ambient-locale bug — a comma in an amount, a Turkish I, a month name in the wrong language? Tell me where it surfaced 👇
+
+#Java #Locale #SpringBoot #Fintech #Backend #JVM #SoftwareEngineering #JavaDeveloper
