@@ -1,0 +1,23 @@
+𝗢𝗻𝗲 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝗽𝗮𝘆𝗹𝗼𝗮𝗱 𝗽𝗶𝗻𝗻𝗲𝗱 𝗮 𝗖𝗣𝗨 𝗰𝗼𝗿𝗲 𝗮𝘁 𝟭𝟬𝟬% 𝗮𝗻𝗱 𝘁𝗵𝗲 𝗿𝗲𝗾𝘂𝗲𝘀𝘁 𝗻𝗲𝘃𝗲𝗿 𝗿𝗲𝘁𝘂𝗿𝗻𝗲𝗱. 𝗡𝗼 𝗲𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻, 𝗻𝗼 𝘁𝗶𝗺𝗲𝗼𝘂𝘁, 𝗻𝗼𝘁𝗵𝗶𝗻𝗴 𝘁𝗼 𝗸𝗶𝗹𝗹. 😬
+
+This lived in the validation layer of a payment service, on a provider callback. One field was a free-text payment reference, checked against a regex somebody wrote years earlier — ordinary, reviewed, quietly correct through millions of callbacks. Then the provider started sending longer descriptions, one ending with a character our pattern did not allow, and a Tomcat worker jumped to 100% and stayed there. Then a second one, on a pod whose metrics still looked completely calm.
+
+The pattern had the usual shape: ^(\𝘄+\𝘀?)+$ — a repeated group whose inside can also repeat, over overlapping character classes. Input that matches succeeds on the first path the engine tries, in microseconds, which is why it looked harmless for years. Input that 𝗮𝗹𝗺𝗼𝘀𝘁 matches, failing on the last character, is another matter: 𝗷𝗮𝘃𝗮.𝘂𝘁𝗶𝗹.𝗿𝗲𝗴𝗲𝘅 must prove that 𝗻𝗼 possible split of that string across the repetitions works before it may answer false. Those splits grow exponentially with length, so around thirty characters one thread walks billions of combinations. The matcher was never stuck — it was working perfectly, on a job that outlives your on-call shift.
+
+The nastier part: you cannot stop it. 𝗠𝗮𝘁𝗰𝗵𝗲𝗿 never checks the thread's interrupt flag, so 𝗙𝘂𝘁𝘂𝗿𝗲.𝗰𝗮𝗻𝗰𝗲𝗹(𝘁𝗿𝘂𝗲), your request timeout and even graceful shutdown all ask politely and get ignored. Nothing ends that match short of killing the process, so one unlucky string costs you a worker thread for good, and a handful of them a whole dead service.
+
+What actually held up for us 👇
+
+• cap the length before the string reaches the matcher, because an O(1) check deletes the exponent, and external free-text should never be unbounded
+
+• kill the nested quantifiers, the (𝘅+)+ and (𝗮|𝗮)+ shapes — possessive quantifiers and atomic groups (?>…) forbid backtracking into a group and pull the worst case back to linear
+
+• hoist patterns into a 𝘀𝘁𝗮𝘁𝗶𝗰 𝗳𝗶𝗻𝗮𝗹 𝗣𝗮𝘁𝘁𝗲𝗿𝗻 — 𝗦𝘁𝗿𝗶𝗻𝗴.𝗺𝗮𝘁𝗰𝗵𝗲𝘀(), 𝘀𝗽𝗹𝗶𝘁() and 𝗿𝗲𝗽𝗹𝗮𝗰𝗲𝗔𝗹𝗹() recompile on every call
+
+• for structured data — an IBAN, a card number, an amount — write the parser, not a regex encoding a format nobody can review
+
+The deeper lesson: a regex looks like a configuration string sitting in a constant, but it is a program with its own execution model, run with an exponential worst case on input somebody outside your company decides. The pattern was never wrong. What cost us was proving one string does not match it.
+
+How do you validate external strings — length caps and possessive quantifiers, hand-written parsers, or a schema at the boundary? Curious what held up on input you do not control 👇
+
+#Java #Regex #ReDoS #SpringBoot #Backend #Security #SoftwareEngineering #JavaDeveloper
