@@ -1,0 +1,23 @@
+𝗢𝘂𝗿 𝗻𝗶𝗴𝗵𝘁𝗹𝘆 𝘀𝗲𝘁𝘁𝗹𝗲𝗺𝗲𝗻𝘁 𝗷𝗼𝗯 𝘀𝘁𝗮𝗿𝘁𝗲𝗱 𝗱𝘆𝗶𝗻𝗴 𝘄𝗶𝘁𝗵 "𝗱𝗲𝗮𝗱𝗹𝗼𝗰𝗸 𝗱𝗲𝘁𝗲𝗰𝘁𝗲𝗱" — 𝗼𝗻 𝗰𝗼𝗱𝗲 𝗻𝗼𝗯𝗼𝗱𝘆 𝗵𝗮𝗱 𝘁𝗼𝘂𝗰𝗵𝗲𝗱 𝗶𝗻 𝗮 𝘆𝗲𝗮𝗿. 😬
+
+It lived in a payment service where two flows wrote the same merchant balance rows: the nightly settlement batch, and the payout flow that never stops. Roughly one batch in ten failed, PostgreSQL killed one transaction as the victim, the retry usually went through — so for months it read like infrastructure noise.
+
+The mechanism is almost embarrassing once you see it. PostgreSQL holds a row lock until the transaction ends, so if A locks row 1 and reaches for row 2 while B sits on row 2 and reaches for row 1, neither can move again and the database shoots one to break the cycle. Where the two orders came from was the part nobody could point at — both flows called the same repository method. They came from the data. The batch read its rows with a query that had no 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬, and a 𝗦𝗘𝗟𝗘𝗖𝗧 without one gives you no ordering guarantee at all — the row order is whatever the plan happens to emit, and it changes the day the planner swaps an index scan for a sequential one. Our lock order was an accident of the query plan.
+
+And it is not only explicit locking. A plain 𝗨𝗣𝗗𝗔𝗧𝗘 holds its row lock to commit just like 𝗦𝗘𝗟𝗘𝗖𝗧 … 𝗙𝗢𝗥 𝗨𝗣𝗗𝗔𝗧𝗘, and under JPA the statement order is Hibernate's decision at flush time, not the order your setters sit in the method.
+
+What actually held up for us 👇
+
+• impose one canonical order everywhere — 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬 𝗶𝗱 on every locking read, and sort the collection before the loop that mutates it, so every transaction walks the same rows in the same sequence
+
+• for queue-style polling reach for 𝗙𝗢𝗥 𝗨𝗣𝗗𝗔𝗧𝗘 𝗦𝗞𝗜𝗣 𝗟𝗢𝗖𝗞𝗘𝗗, where workers step over rows somebody else holds instead of queueing behind them — removing the contention instead of ordering it
+
+• enable 𝗵𝗶𝗯𝗲𝗿𝗻𝗮𝘁𝗲.𝗼𝗿𝗱𝗲𝗿_𝘂𝗽𝗱𝗮𝘁𝗲𝘀 with 𝗼𝗿𝗱𝗲𝗿_𝗶𝗻𝘀𝗲𝗿𝘁𝘀, so flushed statements are sorted by table and primary key instead of persistence-context iteration order
+
+• treat a deadlock as retryable, but retry the whole unit of work on freshly read state, not the one failed statement — and only once the operation is idempotent
+
+The deeper lesson I keep relearning: lock ordering is a global invariant that no single method can see. Every service and job picks its own order in isolation, and the database is the only thing that ever tells you they disagreed — at 03:00, months after the code was written. A deadlock is rarely a database problem, it is your code admitting it never decided in which order it touches money.
+
+How do you keep lock order deterministic — 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬 on every locking read, 𝗦𝗞𝗜𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 queues, or short transactions plus a deadlock retry? Curious what has survived a busy settlement night in your stack 👇
+
+#Java #SpringBoot #PostgreSQL #Hibernate #JPA #Backend #Fintech #SoftwareEngineering
