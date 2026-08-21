@@ -1,0 +1,25 @@
+𝗢𝘂𝗿 𝘀𝘁𝘂𝗰𝗸-𝗽𝗮𝘆𝗺𝗲𝗻𝘁 𝘀𝘄𝗲𝗲𝗽𝗲𝗿 𝘀𝘁𝗼𝗽𝗽𝗲𝗱 𝗿𝘂𝗻𝗻𝗶𝗻𝗴 𝗳𝗼𝗿 𝘀𝗶𝘅 𝗵𝗼𝘂𝗿𝘀. 𝗡𝗼𝘁𝗵𝗶𝗻𝗴 𝗰𝗿𝗮𝘀𝗵𝗲𝗱, 𝗻𝗼𝘁𝗵𝗶𝗻𝗴 𝗹𝗼𝗴𝗴𝗲𝗱, 𝗮𝗻𝗱 𝘁𝗵𝗲 𝗽𝗼𝗱 𝘀𝘁𝗮𝘆𝗲𝗱 𝗽𝗲𝗿𝗳𝗲𝗰𝘁𝗹𝘆 𝗵𝗲𝗮𝗹𝘁𝗵𝘆. 😬
+
+This was a payment service with the usual background jobs — sweeping stuck operations, refreshing provider rates, expiring limit reservations. Support asked why payments had been stuck mid-flow all night, and the sweeper's log lines just stopped at 02:14 and resumed at 08:30.
+
+The cause was a property nobody had ever written. Spring Boot's default 𝗧𝗮𝘀𝗸𝗦𝗰𝗵𝗲𝗱𝘂𝗹𝗲𝗿 is a pool of exactly one thread — 𝘀𝗽𝗿𝗶𝗻𝗴.𝘁𝗮𝘀𝗸.𝘀𝗰𝗵𝗲𝗱𝘂𝗹𝗶𝗻𝗴.𝗽𝗼𝗼𝗹.𝘀𝗶𝘇𝗲 defaults to 𝟭 — and every @𝗦𝗰𝗵𝗲𝗱𝘂𝗹𝗲𝗱 method in the app shares it, yours and every one your libraries registered. Those jobs never ran side by side, they were an invisible queue. That night the rate-refresh job hung on a provider call with no read timeout, held the only scheduler thread hostage, and every other job did not fire late. It did not fire.
+
+The second trap is a choice made on autopilot. 𝗳𝗶𝘅𝗲𝗱𝗗𝗲𝗹𝗮𝘆 measures from the end of the previous run, 𝗳𝗶𝘅𝗲𝗱𝗥𝗮𝘁𝗲 from its start, and people pick fixedRate expecting "every thirty seconds, no matter what". Spring never runs the same method concurrently, so a run outliving its period does not overlap — it queues, then fires back to back to catch up, hammering a barely recovered provider ten times in a row.
+
+The third one is the quietest. An uncaught exception does not kill the schedule — Spring logs it, suppresses it, and the next run happens on time. So a job failing every run looks identical from outside to one working fine: same cadence, same green pod, one ERROR line nobody alerts on.
+
+What actually held up for us 👇
+
+• size that pool on purpose and still treat it as shared, since any dependency can drop another @𝗦𝗰𝗵𝗲𝗱𝘂𝗹𝗲𝗱 onto it
+
+• put a hard timeout on every external call a job makes, because a job without one is not slow, it is a thread borrowed forever
+
+• alert on freshness rather than failures — "last successful run older than N minutes" catches a hung job, a swallowed exception and a jammed pool at once
+
+• default to 𝗳𝗶𝘅𝗲𝗱𝗗𝗲𝗹𝗮𝘆 for anything touching a database or a provider, because you almost always mean "wait a while after finishing", not "start every N seconds regardless"
+
+The deeper lesson I keep relearning: @𝗦𝗰𝗵𝗲𝗱𝘂𝗹𝗲𝗱 reads like a cron entry, so your head models every job as its own process with its own clock. It is one task on a shared pool sized one by default — and the worst failure in a scheduler is never the job that throws, it is the job that quietly stops being called.
+
+How do you run periodic work — @𝗦𝗰𝗵𝗲𝗱𝘂𝗹𝗲𝗱 on a sized pool, a dedicated job service, or an external scheduler hitting an endpoint? Curious what held up in your stack 👇
+
+#Java #SpringBoot #Scheduling #Backend #Fintech #SoftwareEngineering #JavaDeveloper
