@@ -1,0 +1,25 @@
+𝗢𝘂𝗿 𝗺𝗶𝗴𝗿𝗮𝘁𝗶𝗼𝗻 𝗳𝗶𝗻𝗶𝘀𝗵𝗲𝗱 𝗶𝗻 𝟮𝟬𝟬 𝗺𝗶𝗹𝗹𝗶𝘀𝗲𝗰𝗼𝗻𝗱𝘀. 𝗧𝗵𝗲 𝗱𝗲𝗽𝗹𝗼𝘆 𝗯𝗲𝗵𝗶𝗻𝗱 𝗶𝘁 𝗯𝗿𝗼𝗸𝗲 𝗽𝗮𝘆𝗺𝗲𝗻𝘁𝘀 𝗳𝗼𝗿 𝘁𝗵𝗲 𝗻𝗲𝘅𝘁 𝗳𝗼𝘂𝗿 𝗺𝗶𝗻𝘂𝘁𝗲𝘀. 😬
+
+It was the most boring change on the board — one column renamed in the operations table, because the old name had stopped matching what the field meant two refactors ago. Reviewed, green on CI, shipped on a Tuesday like any release.
+
+The first new pod came up, Flyway took its lock, ran the rename and served traffic as expected. The problem was the four pods next to it, still on the previous version, still holding valid Hibernate mappings for a column that had ceased to exist a second earlier, and still taking their full share of traffic — because a rolling deploy replaces replicas one at a time, on purpose.
+
+That is what gets missed when a migration reads like "a change to the database". During a rollout two versions of your code talk to one schema, and the migration lands at the start of that window — so the new schema meets the old code first. A rename is not a rename to the pods still up: it is a drop plus an add, and they only ever see the drop.
+
+The second trap does not live in the application at all. That 𝗔𝗟𝗧𝗘𝗥 𝗧𝗔𝗕𝗟𝗘 takes an 𝗔𝗖𝗖𝗘𝗦𝗦 𝗘𝗫𝗖𝗟𝗨𝗦𝗜𝗩𝗘 lock in PostgreSQL, and although it is instant on a metadata-only change, it waits for every transaction touching the table to finish — while every new query queues behind it. One long-running settlement read turns a 200ms migration into a full stall of your busiest table, and the symptom is connection pool timeouts pointing nowhere near the deploy.
+
+What actually held up for us 👇
+
+• 𝗲𝘅𝗽𝗮𝗻𝗱 𝗮𝗻𝗱 𝗰𝗼𝗻𝘁𝗿𝗮𝗰𝘁, never a rename — add the new nullable column, dual-write both, backfill in batches, drop the old one a release later once nothing reads it
+
+• a migration must be backward compatible with the version already running, not only with the one you are shipping — CI on a clean database never checks that for you
+
+• a short 𝗹𝗼𝗰𝗸_𝘁𝗶𝗺𝗲𝗼𝘂𝘁 on the migration connection plus a retry, so a migration that cannot get its lock fails loudly instead of freezing every query behind it
+
+• 𝗖𝗥𝗘𝗔𝗧𝗘 𝗜𝗡𝗗𝗘𝗫 𝗖𝗢𝗡𝗖𝗨𝗥𝗥𝗘𝗡𝗧𝗟𝗬 for any index on a table under real traffic, in its own non-transactional migration, since it refuses to run inside a transaction block
+
+The deeper lesson I keep relearning: a migration is not a change to a database, it is a change to a contract shared by every version of your code alive at that moment — and during a rolling deploy there is always more than one. Zero downtime is not a property of your deployment strategy, it is a property of the schema change itself.
+
+How do you ship schema changes — strict expand and contract, migrations decoupled from the app release, or an honest maintenance window? Curious what survived a busy release day in your stack 👇
+
+#Java #SpringBoot #Flyway #PostgreSQL #Hibernate #Backend #DevOps #JavaDeveloper
