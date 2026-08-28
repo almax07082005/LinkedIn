@@ -1,0 +1,23 @@
+𝗢𝘂𝗿 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝗳𝗮𝗶𝗹𝗲𝗱 𝗼𝘃𝗲𝗿 𝘁𝗼 𝗮 𝗻𝗲𝘄 𝗜𝗣 𝗶𝗻 𝘂𝗻𝗱𝗲𝗿 𝗮 𝗺𝗶𝗻𝘂𝘁𝗲. 𝗢𝘂𝗿 𝗽𝗼𝗱𝘀 𝗸𝗲𝗽𝘁 𝗱𝗶𝗮𝗹𝗶𝗻𝗴 𝘁𝗵𝗲 𝗱𝗲𝗮𝗱 𝗼𝗻𝗲 𝗳𝗼𝗿 𝘁𝗵𝗿𝗲𝗲 𝗵𝗼𝘂𝗿𝘀. 😬
+
+They announced it properly, moved the endpoint and kept a DNS TTL of sixty seconds. Their side went to plan. On ours, every call to that integration timed out, while a shell in the very same pod resolved the hostname to the new IP and curl against it worked fine. One container, one hostname, two answers. Restarting the deployment fixed it instantly.
+
+The first culprit is a cache almost nobody remembers exists. The JVM keeps its own DNS cache in front of the OS resolver, and 𝗜𝗻𝗲𝘁𝗔𝗱𝗱𝗿𝗲𝘀𝘀 holds a successful lookup for as long as 𝗻𝗲𝘁𝘄𝗼𝗿𝗸𝗮𝗱𝗱𝗿𝗲𝘀𝘀.𝗰𝗮𝗰𝗵𝗲.𝘁𝘁𝗹 allows. That knob is a security property in java.security, not the system property everyone assumes, and with a security manager installed it once defaulted to caching forever. And 𝘀𝘂𝗻.𝗻𝗲𝘁.𝗶𝗻𝗲𝘁𝗮𝗱𝗱𝗿.𝘁𝘁𝗹, the flag people reach for first, is only read when that security property is unset, so a fix can look applied and do nothing. That is why curl and our service disagreed: curl asks the OS every time, the JVM asks itself.
+
+The second culprit would have broken us even with a perfect TTL, because we never resolved anything at all. Our HTTP client held a pool of keep-alive connections, and a pooled connection is an already established socket pointing at the old IP. Handing one back out performs no lookup whatsoever. DNS can update all it likes while the client reuses sockets aimed at a machine that stopped answering, and because that host went silent instead of sending a reset, nothing failed fast. Requests hung until the read timeout.
+
+What actually held up for us 👇
+
+• set 𝗻𝗲𝘁𝘄𝗼𝗿𝗸𝗮𝗱𝗱𝗿𝗲𝘀𝘀.𝗰𝗮𝗰𝗵𝗲.𝘁𝘁𝗹 on purpose to a few seconds, and verify it at runtime rather than trusting what the image inherited
+
+• bound connection lifetime with 𝘀𝗲𝘁𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗶𝗼𝗻𝗧𝗶𝗺𝗲𝗧𝗼𝗟𝗶𝘃𝗲 plus idle eviction, so pooled sockets retire on a schedule and the client has to resolve the name again
+
+• always configure a read timeout, not only a connect timeout, because a socket to a host gone quiet can only fail on the read
+
+• treat "a restart fixed it" as a finding, not a resolution — the broken state lives inside the process and returns on the next failover
+
+The deeper lesson I keep relearning: a hostname is not looked up when your code needs it, it is a decision frozen in three caches you do not own — the OS resolver, the JVM, and your connection pool. The last one resolves nothing at all, so a name can be right everywhere while your traffic still goes to a host that died hours ago.
+
+How do you survive a provider moving an endpoint — short TTLs and bounded connection lifetime, a sidecar that owns resolution, or pinned IPs? Curious what held up through a real failover 👇
+
+#Java #SpringBoot #DNS #Backend #Fintech #Kubernetes #SoftwareEngineering #JavaDeveloper
