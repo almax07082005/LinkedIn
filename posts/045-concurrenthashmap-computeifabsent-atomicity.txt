@@ -1,0 +1,23 @@
+𝗧𝘄𝗼 𝘁𝗵𝗿𝗲𝗮𝗱𝘀 𝗮𝘀𝗸𝗲𝗱 𝗼𝘂𝗿 𝗰𝗮𝗰𝗵𝗲 𝗳𝗼𝗿 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗸𝗲𝘆 𝗮𝘁 𝗼𝗻𝗰𝗲, 𝗮𝗻𝗱 𝗲𝗮𝗰𝗵 𝗴𝗼𝘁 𝗶𝘁𝘀 𝗼𝘄𝗻 𝗿𝗮𝘁𝗲 𝗹𝗶𝗺𝗶𝘁𝗲𝗿. 𝗧𝗵𝗲 𝗽𝗿𝗼𝘃𝗶𝗱𝗲𝗿 𝗴𝗼𝘁 𝗱𝗼𝘂𝗯𝗹𝗲 𝘁𝗵𝗲 𝘁𝗿𝗮𝗳𝗳𝗶𝗰 𝘄𝗲 𝗵𝗮𝗱 𝗽𝗿𝗼𝗺𝗶𝘀𝗲𝗱 𝗶𝘁. 😬
+
+This lived in a payment service talking to a dozen providers, each with an agreed requests-per-second. We kept one limiter per provider in a map, built lazily on first use — four lines in a helper nobody had opened in a year, and wrong in three separate ways that only real concurrency reveals.
+
+The first version used a plain 𝗛𝗮𝘀𝗵𝗠𝗮𝗽. Nothing throws when several threads write into one — you lose entries, or on older runtimes spin forever inside get() on a corrupted bucket chain. No exception, nothing to grep for, and in tests it behaves flawlessly. A HashMap shared across threads is not a slow bug, it is an undefined one.
+
+So we swapped it for a 𝗖𝗼𝗻𝗰𝘂𝗿𝗿𝗲𝗻𝘁𝗛𝗮𝘀𝗵𝗠𝗮𝗽, which killed the corruption and left the real bug alive. The lookup still read "if the key is absent, build a limiter and put it in", and while every single operation on that map is atomic, a sequence of two of them is not. Both threads see the key missing, both build a limiter, both call put, one silently overwrites the other, and two limiters each hand out the full quota.
+
+𝗰𝗼𝗺𝗽𝘂𝘁𝗲𝗜𝗳𝗔𝗯𝘀𝗲𝗻𝘁 fixes exactly that, since the check and the insert become one atomic step and the mapping function runs at most once per key. But it carries a cost that rarely makes the tutorials: that function runs while the bin is locked. Put a database read or an HTTP call in it and every thread hashing into that bin queues behind you, and if it reaches back into the same map through some helper further down, you get 𝗜𝗹𝗹𝗲𝗴𝗮𝗹𝗦𝘁𝗮𝘁𝗲𝗘𝘅𝗰𝗲𝗽𝘁𝗶𝗼𝗻: 𝗥𝗲𝗰𝘂𝗿𝘀𝗶𝘃𝗲 𝘂𝗽𝗱𝗮𝘁𝗲 when you are lucky and a blocked bin when you are not.
+
+What actually held up for us 👇
+
+• keep the mapping function short, pure and free of IO — build the value from data you already hold
+
+• when the value really is expensive, cache a 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗯𝗹𝗲𝗙𝘂𝘁𝘂𝗿𝗲 instead, so every caller joins the same in-flight computation with no lock held across the network
+
+• for eviction, size limits or refresh, reach for a real cache library rather than a map you keep patching — a map is a data structure, a cache is a policy
+
+The deeper lesson I keep relearning: a thread-safe collection only promises that the structure survives concurrent access. It says nothing about whether your read-then-write sequence around it is atomic, and that gap is where the expensive bugs live. "We use ConcurrentHashMap now" reads like a fix and is usually the same race, tidier.
+
+How do you build lazy per-key state — computeIfAbsent with a trivial factory, futures cached in the map, or a real cache library? Curious what has held up under real concurrency 👇
+
+#Java #Concurrency #ConcurrentHashMap #SpringBoot #Backend #SoftwareEngineering #JavaDeveloper
