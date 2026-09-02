@@ -1,0 +1,23 @@
+𝗞𝗮𝗳𝗸𝗮 𝗮𝗰𝗸𝗻𝗼𝘄𝗹𝗲𝗱𝗴𝗲𝗱 𝗲𝘃𝗲𝗿𝘆 𝗲𝘃𝗲𝗻𝘁. 𝗔 𝗯𝗿𝗼𝗸𝗲𝗿 𝗿𝗲𝘀𝘁𝗮𝗿𝘁𝗲𝗱, 𝗮𝗻𝗱 𝗮 𝗳𝗲𝘄 𝗵𝘂𝗻𝗱𝗿𝗲𝗱 𝗼𝗳 𝘁𝗵𝗲𝗺 𝘄𝗲𝗿𝗲 𝗴𝗼𝗻𝗲. 😬
+
+This lived in a payment service publishing settlement events a downstream ledger consumed to build the daily balance. During a routine rolling broker upgrade the producer logged nothing unusual — no exception, no error metric, every send successful. Next morning reconciliation was short by a few hundred operations our database insisted had completed perfectly.
+
+The first trap is one config character. 𝗮𝗰𝗸𝘀=𝟭 means the partition leader writes the record to its own log and answers immediately, without waiting for a single follower to replicate it. That answer is honest about what it says and misleading about what you assume, because the record now lives on exactly one machine. Take that leader out at the wrong moment, a follower that never received those records gets elected, and they leave with the old leader. Nobody lost them — they were never anywhere else to begin with.
+
+The fix everyone reaches for is 𝗮𝗰𝗸𝘀=𝗮𝗹𝗹, and alone it is still not enough. It means "every replica currently in sync", so when replication falls behind and the leader is the only in-sync replica left, acks=all is acks=1 wearing a better name. It becomes a real guarantee only next to min.insync.replicas=2 on RF 3, which makes the broker reject the write instead of accepting it somewhere it cannot protect.
+
+The second trap loses nothing — it reorders. A producer keeps five requests in flight per connection by default, so when one batch fails and is retried, batches sent after it may already sit on the log. In a partition your consumer trusts to be ordered, a status update lands ahead of the transition that caused it, and the state machine reading it settles into a state that never happened.
+
+What actually held up for us 👇
+
+• 𝗮𝗰𝗸𝘀=𝗮𝗹𝗹 with 𝗺𝗶𝗻.𝗶𝗻𝘀𝘆𝗻𝗰.𝗿𝗲𝗽𝗹𝗶𝗰𝗮𝘀=𝟮 on RF 3 — durability is an agreement between brokers, not a client-side preference
+
+• enable.idempotence=true set on purpose, plus a partition key per aggregate, because ordering exists only inside a partition and no key means round-robin means no ordering at all
+
+• never fire and forget — send() is asynchronous, and ignoring the future and the callback means a delivery that burns through its retries fails on the producer's IO thread with nothing to propagate to
+
+The deeper lesson I keep relearning: an ack is not a promise your message is safe, it is a claim about how many machines agreed to keep it — and by default that number is one. The producer ships tuned for throughput, so every durability property you assumed you had is one you had to ask for out loud.
+
+How do you publish critical events — acks=all with idempotence, an outbox with a relay, or CDC off the transaction log? Curious what survived a real broker failover 👇
+
+#Java #Kafka #SpringBoot #Backend #DistributedSystems #Fintech #SoftwareEngineering #JavaDeveloper
