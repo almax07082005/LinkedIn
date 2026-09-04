@@ -1,0 +1,23 @@
+𝗢𝘂𝗿 𝗻𝗶𝗴𝗵𝘁𝗹𝘆 𝗲𝘅𝗽𝗼𝗿𝘁 𝗽𝗮𝗴𝗲𝗱 𝘁𝗵𝗿𝗼𝘂𝗴𝗵 𝟰𝟬𝟬,𝟬𝟬𝟬 𝗽𝗮𝘆𝗺𝗲𝗻𝘁𝘀. 𝗜𝘁 𝘀𝗵𝗶𝗽𝗽𝗲𝗱 𝗮 𝗳𝗲𝘄 𝗼𝗳 𝘁𝗵𝗲𝗺 𝘁𝘄𝗶𝗰𝗲 𝗮𝗻𝗱 𝗾𝘂𝗶𝗲𝘁𝗹𝘆 𝘀𝗸𝗶𝗽𝗽𝗲𝗱 𝗼𝘁𝗵𝗲𝗿𝘀. 😬
+
+This was a reconciliation export in a payment service — walk the operations table in pages of a thousand, push each page to the provider, repeat. It ran nightly for a year. Then their finance team asked why one settlement file held duplicated operations, and why a handful our database clearly held never arrived. Nothing failed: every page returned exactly a thousand rows and the job logged a clean finish.
+
+The query was the most ordinary thing in the codebase: 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬 𝗰𝗿𝗲𝗮𝘁𝗲𝗱_𝗮𝘁, 𝗟𝗜𝗠𝗜𝗧 1000, 𝗢𝗙𝗙𝗦𝗘𝗧 n. But OFFSET is not a bookmark. It does not remember where the previous page ended — it re-sorts the table from scratch and discards the first n rows, against whatever that table holds right now. Ours is written to continuously, so between page 12 and page 13 new operations landed ahead of the offset and pushed the rest down. Those rows slid backwards across a boundary we had already passed and nobody ever read them, while rows drifting the other way reached us twice.
+
+The second trap sat in the 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬 itself. 𝗰𝗿𝗲𝗮𝘁𝗲𝗱_𝗮𝘁 is not unique — plenty of our operations share a millisecond — and SQL promises nothing about rows that tie. The tiebreak is whatever the plan emits, and it can come out differently on the next call, so even on a frozen table a row on a tie boundary can end page 12 and open page 13. A sort without a unique tiebreaker is not an order, it is a suggestion.
+
+OFFSET is not free either: 𝗢𝗙𝗙𝗦𝗘𝗧 𝟯𝟬𝟬𝟬𝟬𝟬 reads and discards 300,000 rows rather than skipping, so page 1 is instant while page 300 scans most of the table — and each Spring Data 𝗣𝗮𝗴𝗲 adds a 𝗖𝗢𝗨𝗡𝗧 over the whole set on top.
+
+What actually held up for us 👇
+
+• always end 𝗢𝗥𝗗𝗘𝗥 𝗕𝗬 with a unique tiebreaker — 𝗰𝗿𝗲𝗮𝘁𝗲𝗱_𝗮𝘁, 𝗶𝗱 — because ties have no defined order and the planner may break them differently each call
+
+• for anything walking an entire table, switch to 𝗸𝗲𝘆𝘀𝗲𝘁 𝗽𝗮𝗴𝗶𝗻𝗮𝘁𝗶𝗼𝗻: carry the last row's (created_at, id) forward and ask for what is strictly after it, so a page is anchored to data, not to a row count
+
+• pin an upper bound when the run starts — 𝗰𝗿𝗲𝗮𝘁𝗲𝗱_𝗮𝘁 <= 𝗷𝗼𝗯 𝘀𝘁𝗮𝗿𝘁 — so rows arriving mid-export land in tomorrow's file instead of reshuffling the pages ahead
+
+The deeper lesson I keep relearning: OFFSET answers "how many rows do I throw away", never "where did I stop". Those two share an answer only while nothing writes to the table — exactly the assumption a payments table never satisfies.
+
+How do you page through large tables — keyset pagination, a cursor held open for the export, or OFFSET with a frozen bound? Curious what survived a table nobody stops writing to 👇
+
+#Java #SpringBoot #PostgreSQL #JPA #Pagination #Backend #SoftwareEngineering #JavaDeveloper
