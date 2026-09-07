@@ -1,0 +1,23 @@
+𝗪𝗲 𝘁𝗼𝗹𝗱 𝗮 𝗰𝘂𝘀𝘁𝗼𝗺𝗲𝗿 "𝘆𝗼𝘂𝗿 𝗽𝗮𝘆𝗼𝘂𝘁 𝗶𝘀 𝗼𝗻 𝗶𝘁𝘀 𝘄𝗮𝘆". 𝗧𝗵𝗲 𝘁𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗯𝗲𝗵𝗶𝗻𝗱 𝗶𝘁 𝗿𝗼𝗹𝗹𝗲𝗱 𝗯𝗮𝗰𝗸 𝗮 𝗺𝗼𝗺𝗲𝗻𝘁 𝗹𝗮𝘁𝗲𝗿. 😬
+
+This lived in a payment service's decoupled payout flow. The service saved the operation and published a PayoutCreated event through 𝗔𝗽𝗽𝗹𝗶𝗰𝗮𝘁𝗶𝗼𝗻𝗘𝘃𝗲𝗻𝘁𝗣𝘂𝗯𝗹𝗶𝘀𝗵𝗲𝗿, and separate listeners sent the email, wrote an audit row and called the provider. Then support forwarded an email about a payout our database had never seen.
+
+The first trap is that a plain @𝗘𝘃𝗲𝗻𝘁𝗟𝗶𝘀𝘁𝗲𝗻𝗲𝗿 is not a queue. publishEvent is a synchronous call — Spring runs the listeners on the same thread, inside the transaction that is still open. So the email went out while the INSERT was uncommitted, then a limit check threw and the operation rolled back, message already gone. Making the listener @𝗔𝘀𝘆𝗻𝗰 flips it the other way: it races the commit on another thread and reads a row that is not visible yet, so our audit listener logged "operation not found" for rows that were about to exist.
+
+@𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻𝗮𝗹𝗘𝘃𝗲𝗻𝘁𝗟𝗶𝘀𝘁𝗲𝗻𝗲𝗿 is the fix Spring offers. It defers the listener to 𝗔𝗙𝗧𝗘𝗥_𝗖𝗢𝗠𝗠𝗜𝗧, so it fires once the row is durable. We switched every listener over, and the audit row stopped appearing. Nothing threw. After commit the transaction is over, but its resources are still bound to the thread, so a repository call in the listener joins a transaction that already committed, and nothing ever flushes it. A write in an AFTER_COMMIT listener needs 𝗥𝗘𝗤𝗨𝗜𝗥𝗘𝗦_𝗡𝗘𝗪, or it silently does nothing.
+
+Two smaller traps. If the publisher is not inside a transaction, a transactional listener never fires, since there is no commit to wait for. And an exception thrown after commit reaches the caller as a failure of a method that already succeeded, so the client retries, and now you have two payouts.
+
+What actually held up for us 👇
+
+• publish inside the transaction, handle after commit — a plain @EventListener only for work that must roll back together with the publisher
+
+• 𝗥𝗘𝗤𝗨𝗜𝗥𝗘𝗦_𝗡𝗘𝗪 on any listener that writes, treated as its own unit of work
+
+• no email, webhook or provider call straight from a listener that cannot be retried — persist an intent row and let a worker send it, the outbox pattern in a different coat
+
+The deeper lesson I keep relearning: an in-process event looks like decoupling, but it inherits the thread, the transaction and the failure semantics of whoever published it. It is a method call with a hidden position relative to your commit, and that position decides whether the side effect ever happened.
+
+How do you handle side effects after a commit — @TransactionalEventListener with REQUIRES_NEW, an outbox with a relay, or Kafka straight from the service? Curious what held up when the transaction rolled back 👇
+
+#Java #SpringBoot #Transactions #Backend #Fintech #SoftwareEngineering #JavaDeveloper
